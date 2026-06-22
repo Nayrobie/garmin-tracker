@@ -15,10 +15,13 @@ This project provides a unified interface to:
 
 ```
 garmin-tracking-app/
-├── backend/          # Python FastAPI (separate for future multi-platform support)
-├── frontend/         # Streamlit UI (local development; React.js in future)
+├── backend/          # Python FastAPI (shared by all frontends)
+├── frontend/         # Streamlit UI (legacy; no new features here)
+├── frontend-react/   # React + TypeScript (active development — Phase 0 onwards)
 └── .github/          # Instructions & skills for Copilot
 ```
+
+**Status**: Phase 0 complete — React frontend scaffolded with race management UI. Streamlit kept alive but no longer developed. Both frontends connect to the same FastAPI backend.
 
 ## Getting Started
 
@@ -46,6 +49,13 @@ Then edit `.env` with your Garmin credentials and Garmin Connect API settings.
 
 ### Frontend Setup
 
+**React (Recommended — Active Development):**
+```bash
+cd frontend-react
+npm install
+```
+
+**Streamlit (Legacy):**
 ```bash
 cd frontend
 python -m venv venv
@@ -53,26 +63,37 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Copy and configure the frontend `.env.example`:
-```bash
-cp .env.example .env
-```
-
 ### Run Locally
 
-Start the backend:
+**Terminal 1 — Backend** (shared by both frontends):
 ```bash
 cd backend
 python -m uvicorn app.main:app --reload
+# → http://localhost:8000
 ```
 
-In a separate terminal, start the frontend:
+**Terminal 2 — React Frontend** (recommended):
+```bash
+cd frontend-react
+npm run dev
+# → http://localhost:5173
+```
+
+**Terminal 2 (alt) — Streamlit Frontend** (legacy):
 ```bash
 cd frontend
 streamlit run streamlit_app.py
 ```
 
 Access the app at `http://localhost:8501`
+
+## Development
+
+See [.github/copilot-instructions.md](.github/copilot-instructions.md) for full development context, including:
+- Local-first workflow
+- Code standards (PEP8, type hints)
+- Never commit without explicit approval
+- Never modify `pyproject.toml` directly; use `poetry add/remove`
 
 ## Project Context
 

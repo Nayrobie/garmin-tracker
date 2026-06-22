@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, sans-serif;
+
+  /* Apple-inspired palette */
+  --color-surface: oklch(0.98 0.002 264);
+  --color-surface-dark: oklch(0.12 0.01 264);
+  --color-glass: oklch(1 0 0 / 0.6);
+  --color-glass-dark: oklch(0.15 0.01 264 / 0.6);
+  --color-border-glass: oklch(1 0 0 / 0.2);
+  --color-accent: oklch(0.55 0.22 264);   /* Apple blue #007AFF */
+  --color-accent-light: oklch(0.93 0.05 264);
+
+  /* Workout type colours */
+  --color-run: oklch(0.65 0.18 25);       /* coral */
+  --color-cycle: oklch(0.62 0.15 200);    /* teal */
+  --color-strength: oklch(0.58 0.16 300); /* purple */
+  --color-yoga: oklch(0.68 0.12 140);     /* sage green */
+  --color-rest: oklch(0.75 0.04 264);     /* muted blue */
+
+  --radius-card: 1.25rem;    /* 20px — Apple's preferred corner radius */
+  --radius-btn: 0.75rem;
+
+  --shadow-glass: 0 8px 32px oklch(0 0 0 / 0.08), 0 2px 8px oklch(0 0 0 / 0.04);
+  --shadow-card: 0 4px 16px oklch(0 0 0 / 0.06);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--color-surface);
+}
+
+/* Scrollbar — thin, macOS-style */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: oklch(0.7 0.01 264 / 0.5); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: oklch(0.6 0.01 264 / 0.7); }
