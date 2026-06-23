@@ -2,7 +2,13 @@
 import os
 from pathlib import Path
 
-# Project root
+from dotenv import load_dotenv
+
+# Load .env file from project root before reading any env vars
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
+
+# Project root (for app code reference)
 BASE_DIR = Path(__file__).parent.parent
 
 # Environment

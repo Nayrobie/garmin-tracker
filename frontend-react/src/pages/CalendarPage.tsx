@@ -1,17 +1,13 @@
 /**
- * Calendar page: placeholder for Phase 1 (drag-and-drop weekly workout planner).
+ * Calendar page: weekly drag-and-drop workout planner (Phase 1).
  */
-import { Card } from '../components/ui/Card';
+import { WeekStrip } from '../components/workouts/WeekStrip';
 
 export function CalendarPage() {
   return (
     <div>
       <h1 className="text-2xl font-semibold text-gray-900 mb-6">Calendar</h1>
-      <Card>
-        <p className="text-sm text-gray-500">
-          Weekly calendar with drag-and-drop workouts — coming in Phase 1.
-        </p>
-      </Card>
+      <WeekStrip />
     </div>
   );
 }

@@ -15,3 +15,56 @@ export interface Race {
 
 export type CreateRacePayload = Omit<Race, 'id'>;
 export type UpdateRacePayload = Partial<CreateRacePayload>;
+
+// ---------------------------------------------------------------------------
+// Workouts
+// ---------------------------------------------------------------------------
+
+export type WorkoutType = 'run' | 'cycle' | 'strength' | 'yoga' | 'other';
+
+export type Recurrence = 'none' | 'weekly' | 'biweekly' | 'monthly';
+
+export interface PlannedWorkout {
+  id: number;
+  date: string; // "YYYY-MM-DD"
+  type: WorkoutType;
+  goal_duration_min: number | null;
+  goal_pace_per_km: string | null; // "MM:SS"
+  notes: string | null;
+  recurrence: Recurrence;
+  recurrence_group_id: string | null;
+}
+
+export type CreatePlannedWorkoutPayload = Omit<PlannedWorkout, 'id' | 'recurrence_group_id'> & {
+  recurrence_weeks?: number;
+};
+export type UpdatePlannedWorkoutPayload = Partial<Omit<CreatePlannedWorkoutPayload, 'recurrence' | 'recurrence_weeks'>>;
+
+export interface ActualWorkout {
+  id: number;
+  garmin_activity_id: string | null;
+  date: string;
+  type: WorkoutType;
+  name: string | null;
+  duration_min: number | null;
+  distance_km: number | null;
+  avg_hr: number | null;
+  avg_pace_per_km: string | null;
+  calories: number | null;
+  rpe: number | null;
+  notes: string | null;
+  synced_at: string | null;
+  planned_workout_id: number | null;
+}
+
+export interface DaySchedule {
+  date: string;
+  planned: PlannedWorkout[];
+  actual: ActualWorkout[];
+}
+
+export interface WeeklySchedule {
+  week_start: string;
+  days: DaySchedule[];
+  last_sync: string | null;
+}

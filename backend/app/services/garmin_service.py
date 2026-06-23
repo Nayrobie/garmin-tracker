@@ -1,1 +1,219 @@
-"""Garmin service module."""
+"""Garmin Connect sync service.
+
+Fetches recent activities from Garmin Connect via the garminconnect library
+and upserts them into the local actual_workouts table.
+
+When GARMIN_EMAIL / GARMIN_PASSWORD are not set the sync is a no-op and
+returns a descriptive message — this lets the app start without credentials.
+"""
+from __future__ import annotations
+
+import logging
+from datetime import date, datetime, timedelta
+from typing import Any
+
+from sqlalchemy.orm import Session
+
+from app.config import GARMIN_EMAIL, GARMIN_PASSWORD
+from app.models.workout import ActualWorkoutORM, GarminSyncStateORM, WorkoutType
+
+# Activity type keys that should never be imported into the calendar
+_BLACKLISTED_TYPES: frozenset[str] = frozenset({
+    "stop_watch",
+    "other",
+})
+
+_GARMIN_TYPE_MAP: dict[str, WorkoutType] = {
+    # Running
+    "running": WorkoutType.run,
+    "trail_running": WorkoutType.run,
+    "treadmill_running": WorkoutType.run,
+    "track_running": WorkoutType.run,
+    "virtual_run": WorkoutType.run,
+    "ultra_run": WorkoutType.run,
+    # Cycling
+    "cycling": WorkoutType.cycle,
+    "road_biking": WorkoutType.cycle,
+    "indoor_cycling": WorkoutType.cycle,
+    "mountain_biking": WorkoutType.cycle,
+    "mountain_biking_trail": WorkoutType.cycle,
+    "gravel_cycling": WorkoutType.cycle,
+    "virtual_ride": WorkoutType.cycle,
+    # Strength / cardio
+    "strength_training": WorkoutType.strength,
+    "cardio_training": WorkoutType.strength,
+    "hiit": WorkoutType.strength,
+    # Yoga / flexibility
+    "yoga": WorkoutType.yoga,
+    "pilates": WorkoutType.yoga,
+    "flexibility": WorkoutType.yoga,
+    "breathwork": WorkoutType.yoga,
+    "meditation": WorkoutType.yoga,
+    # Hiking/walking → run bucket (outdoor endurance)
+    "hiking": WorkoutType.run,
+    "walking": WorkoutType.run,
+    "indoor_walking": WorkoutType.run,
+}
+
+
+def _map_activity_type(garmin_type: str) -> WorkoutType:
+    """Map a Garmin activity type string to a WorkoutType enum value.
+
+    Args:
+        garmin_type: Raw activity type string from Garmin API.
+
+    Returns:
+        Matching WorkoutType; falls back to WorkoutType.other.
+    """
+    return _GARMIN_TYPE_MAP.get(garmin_type.lower(), WorkoutType.other)
+
+
+def _format_pace(avg_speed_mps: float | None) -> str | None:
+    """Convert average speed (m/s) to a MM:SS/km pace string.
+
+    Args:
+        avg_speed_mps: Average speed in metres per second; None if unavailable.
+
+    Returns:
+        Pace string like "5:30", or None if speed is zero or None.
+    """
+    if not avg_speed_mps:
+        return None
+    secs_per_km = 1000 / avg_speed_mps
+    minutes, seconds = divmod(int(secs_per_km), 60)
+    return f"{minutes}:{seconds:02d}"
+
+
+def _upsert_activity(db: Session, activity: dict[str, Any]) -> bool:
+    """Insert or update a single Garmin activity in the DB.
+
+    Args:
+        db: Active database session.
+        activity: Raw activity dict from garminconnect.
+
+    Returns:
+        True if a new row was inserted, False if an existing row was updated.
+    """
+    garmin_id = str(activity.get("activityId", ""))
+    if not garmin_id:
+        return False
+
+    # Skip blacklisted activity types
+    garmin_type: str = (
+        activity.get("activityType", {}).get("typeKey", "")
+        if isinstance(activity.get("activityType"), dict)
+        else str(activity.get("activityType", ""))
+    )
+    if garmin_type.lower() in _BLACKLISTED_TYPES:
+        return False
+
+    existing = (
+        db.query(ActualWorkoutORM)
+        .filter(ActualWorkoutORM.garmin_activity_id == garmin_id)
+        .first()
+    )
+
+    start_time_str: str = activity.get("startTimeLocal", "")
+    try:
+        activity_date = datetime.fromisoformat(start_time_str).date()
+    except (ValueError, TypeError):
+        activity_date = date.today()
+
+    duration_s: float = activity.get("duration", 0) or 0
+    distance_m: float = activity.get("distance", 0) or 0
+    avg_hr: int | None = activity.get("averageHR")
+    avg_speed: float | None = activity.get("averageSpeed")
+    calories: int | None = activity.get("calories")
+    activity_name: str | None = activity.get("activityName")
+    # garmin_type already extracted above for blacklist check
+
+    fields = {
+        "date": activity_date,
+        "type": _map_activity_type(garmin_type),
+        "name": activity_name,
+        "duration_min": round(duration_s / 60, 1) if duration_s else None,
+        "distance_km": round(distance_m / 1000, 3) if distance_m else None,
+        "avg_hr": int(avg_hr) if avg_hr else None,
+        "avg_pace_per_km": _format_pace(avg_speed),
+        "calories": int(calories) if calories else None,
+        "synced_at": datetime.utcnow(),
+    }
+
+    if existing:
+        for k, v in fields.items():
+            setattr(existing, k, v)
+        return False
+    else:
+        row = ActualWorkoutORM(garmin_activity_id=garmin_id, **fields)
+        db.add(row)
+        return True
+
+
+def sync_garmin_activities(db: Session, days_back: int = 7) -> dict:
+    """Pull recent activities from Garmin Connect and upsert into the DB.
+
+    Args:
+        db: Active database session.
+        days_back: How many days of history to fetch (default: 7).
+
+    Returns:
+        Dict summarising the sync result:
+        ``{"synced": int, "updated": int, "error": str | None}``.
+    """
+    if not GARMIN_EMAIL or not GARMIN_PASSWORD:
+        logger.warning("Garmin credentials not configured — skipping sync.")
+        return {
+            "synced": 0,
+            "updated": 0,
+            "error": "Garmin credentials not configured. Set GARMIN_EMAIL and GARMIN_PASSWORD.",
+        }
+
+    try:
+        from garminconnect import Garmin  # type: ignore[import]
+    except ImportError:
+        return {
+            "synced": 0,
+            "updated": 0,
+            "error": "garminconnect package not installed. Run: pip install garminconnect",
+        }
+
+    try:
+        client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
+        client.login()
+    except Exception as exc:
+        logger.exception("Garmin login failed")
+        return {"synced": 0, "updated": 0, "error": f"Login failed: {exc}"}
+
+    start_date = date.today() - timedelta(days=days_back)
+    end_date = date.today()
+
+    try:
+        activities: list[dict] = client.get_activities_by_date(
+            start_date.isoformat(), end_date.isoformat()
+        )
+    except Exception as exc:
+        logger.exception("Failed to fetch Garmin activities")
+        return {"synced": 0, "updated": 0, "error": f"Fetch failed: {exc}"}
+
+    inserted = 0
+    updated = 0
+    for activity in activities:
+        is_new = _upsert_activity(db, activity)
+        if is_new:
+            inserted += 1
+        else:
+            updated += 1
+
+    # Update singleton sync-state row
+    sync_state = db.get(GarminSyncStateORM, 1)
+    if sync_state is None:
+        sync_state = GarminSyncStateORM(id=1, last_sync_at=datetime.utcnow())
+        db.add(sync_state)
+    else:
+        sync_state.last_sync_at = datetime.utcnow()
+
+    db.commit()
+
+    logger.info("Garmin sync complete: %d inserted, %d updated.", inserted, updated)
+    return {"synced": inserted, "updated": updated, "error": None}
+

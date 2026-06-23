@@ -27,5 +27,5 @@ def get_db():
 
 def init_db() -> None:
     """Create all tables if they don't exist yet."""
-    from app.models import workout  # noqa: F401 — registers models with Base
+    from app.models import workout  # noqa: F401 — registers all ORM models with Base
     Base.metadata.create_all(bind=engine)
