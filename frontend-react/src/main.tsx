@@ -1,5 +1,5 @@
 /**
- * Entry point: renders the React app into the DOM and initializes the application.
+ * Entry point: renders the React app into the DOM (Document Object Model) and initializes the application.
  */
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'

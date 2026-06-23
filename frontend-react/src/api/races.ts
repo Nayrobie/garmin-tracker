@@ -1,5 +1,5 @@
 /**
- * API client: thin fetch wrapper for race endpoints (GET, POST, PATCH, DELETE /api/races).
+ * API client: thin fetch wrapper for race endpoints (GET, POST, PATCH, DELETE /api/races). Bridge between frontend and backend.
  */
 import type { Race, CreateRacePayload, UpdateRacePayload } from '../types';
 
