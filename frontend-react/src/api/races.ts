@@ -1,3 +1,6 @@
+/**
+ * API client: thin fetch wrapper for race endpoints (GET, POST, PATCH, DELETE /api/races).
+ */
 import type { Race, CreateRacePayload, UpdateRacePayload } from '../types';
 
 const BASE = '/api';

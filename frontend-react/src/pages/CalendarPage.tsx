@@ -1,3 +1,6 @@
+/**
+ * Calendar page: placeholder for Phase 1 (drag-and-drop weekly workout planner).
+ */
 import { Card } from '../components/ui/Card';
 
 export function CalendarPage() {

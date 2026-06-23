@@ -1,3 +1,6 @@
+/**
+ * Reusable card component: styled container with glassmorphism effect and padding options.
+ */
 import { type HTMLAttributes, forwardRef } from 'react';
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {

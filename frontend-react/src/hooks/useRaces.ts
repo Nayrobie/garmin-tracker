@@ -1,3 +1,6 @@
+/**
+ * Custom hook: manages race state and provides CRUD operations (create, read, update, delete) with loading/error handling.
+ */
 import { useState, useEffect, useCallback } from 'react';
 import { racesApi } from '../api/races';
 import type { Race, CreateRacePayload, UpdateRacePayload } from '../types';

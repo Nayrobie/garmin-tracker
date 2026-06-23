@@ -1,3 +1,6 @@
+/**
+ * TypeScript type definitions: Race interface and related types (similar to Pydantic schemas in backend).
+ */
 export type RaceType = 'trail' | 'semi' | '10k' | 'marathon' | 'other';
 
 export interface Race {

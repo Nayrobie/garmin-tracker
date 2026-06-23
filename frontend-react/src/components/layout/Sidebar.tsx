@@ -1,3 +1,6 @@
+/**
+ * Left sidebar: navigation menu with links to pages and race countdown widget.
+ */
 import { NavLink } from 'react-router-dom';
 import { Calendar, Heart, Moon, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';

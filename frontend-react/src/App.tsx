@@ -1,3 +1,6 @@
+/**
+ * Root component: sets up routing (maps URLs to pages) and wraps all pages in AppShell layout.
+ */
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AppShell } from './components/layout/AppShell';
 import { CalendarPage } from './pages/CalendarPage';

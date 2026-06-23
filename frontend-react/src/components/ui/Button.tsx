@@ -1,3 +1,6 @@
+/**
+ * Reusable button component: supports variants (primary, secondary, ghost, danger) and sizes (sm, md, lg).
+ */
 import { type ButtonHTMLAttributes, forwardRef } from 'react';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';

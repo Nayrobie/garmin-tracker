@@ -1,3 +1,6 @@
+/**
+ * Global stylesheet: applies design system (colours, fonts, shadows, spacing) everywhere on the app.
+ */
 @import "tailwindcss";
 
 @theme {

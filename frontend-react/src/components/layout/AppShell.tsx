@@ -1,3 +1,6 @@
+/**
+ * Main layout wrapper: contains sidebar and main content area with gradient background.
+ */
 import { type ReactNode } from 'react';
 import { Sidebar } from './Sidebar';
 

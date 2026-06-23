@@ -1,3 +1,6 @@
+/**
+ * Reusable modal component: animated dialog with backdrop, escape-to-close, and Framer Motion animations.
+ */
 import { type ReactNode, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';

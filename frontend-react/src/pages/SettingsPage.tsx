@@ -1,3 +1,6 @@
+/**
+ * Settings page: placeholder for Garmin credentials and user preferences.
+ */
 import { Card } from '../components/ui/Card';
 
 export function SettingsPage() {

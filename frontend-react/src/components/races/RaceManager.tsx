@@ -1,3 +1,6 @@
+/**
+ * Race manager modal: full CRUD interface to create, edit, and delete races with form validation.
+ */
 import { useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { Plus, Pencil, Trash2, Mountain, MapPin } from 'lucide-react';

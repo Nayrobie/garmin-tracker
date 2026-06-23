@@ -1,3 +1,6 @@
+/**
+ * Health page: placeholder for Phase 3 (sleep, stress, body battery, resting HR metrics).
+ */
 import { Card } from '../components/ui/Card';
 
 export function HealthPage() {

@@ -1,3 +1,6 @@
+/**
+ * Race countdown widget: displays next 3 upcoming races in sidebar with days remaining and opens RaceManager modal.
+ */
 import { useState } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
 import { Flag } from 'lucide-react';
