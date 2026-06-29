@@ -15,7 +15,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.config import GARMIN_EMAIL, GARMIN_PASSWORD
-from app.models.workout import ActualWorkoutORM, GarminSyncStateORM, WorkoutType
+from app.models.workout import ActualWorkoutORM, GarminSyncStateORM, PlannedWorkoutORM, WorkoutType
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ _GARMIN_TYPE_MAP: dict[str, WorkoutType] = {
     "hiit": WorkoutType.strength,
     # Yoga / flexibility
     "yoga": WorkoutType.yoga,
-    "pilates": WorkoutType.yoga,
+    "pilates": WorkoutType.pilates,
     "flexibility": WorkoutType.yoga,
     "breathwork": WorkoutType.yoga,
     "meditation": WorkoutType.yoga,
@@ -56,6 +56,34 @@ _GARMIN_TYPE_MAP: dict[str, WorkoutType] = {
     "walking": WorkoutType.run,
     "indoor_walking": WorkoutType.run,
 }
+
+# Compatible type groups for auto-matching actual → planned workouts.
+# If an actual workout's type is in the same group as a planned workout's type,
+# they can be matched together (same day).
+_COMPATIBLE_TYPES: list[set[WorkoutType]] = [
+    {WorkoutType.run},
+    {WorkoutType.cycle},
+    {WorkoutType.strength},  # hiit, cardio, strength all map to strength
+    {WorkoutType.yoga, WorkoutType.pilates},  # yoga and pilates are interchangeable
+]
+
+
+def _types_compatible(actual_type: WorkoutType, planned_type: WorkoutType) -> bool:
+    """Check if an actual workout type is compatible with a planned type.
+
+    Args:
+        actual_type: Type from Garmin sync.
+        planned_type: Type from planned workout.
+
+    Returns:
+        True if the types belong to the same compatibility group.
+    """
+    if actual_type == planned_type:
+        return True
+    for group in _COMPATIBLE_TYPES:
+        if actual_type in group and planned_type in group:
+            return True
+    return False
 
 
 def _map_activity_type(garmin_type: str) -> WorkoutType:
@@ -240,6 +268,66 @@ def sync_garmin_activities(
 
     db.commit()
 
+    # Auto-match unlinked actual workouts to planned workouts
+    _auto_match_workouts(db)
+
     logger.info("Garmin sync complete: %d inserted, %d updated.", inserted, updated)
     return {"synced": inserted, "updated": updated, "error": None}
 
+
+def _auto_match_workouts(db: Session) -> None:
+    """Link unmatched actual workouts to planned workouts on the same day.
+
+    Uses type compatibility groups so that e.g. a Garmin HIIT activity
+    (mapped to 'strength') matches a planned 'strength' workout, and a
+    Garmin 'pilates' activity matches a planned 'yoga' or 'pilates' workout.
+
+    Only matches if there's exactly one compatible planned workout on that day
+    that isn't already matched to another actual workout.
+
+    Args:
+        db: Database session.
+    """
+    unmatched = (
+        db.query(ActualWorkoutORM)
+        .filter(ActualWorkoutORM.planned_workout_id.is_(None))
+        .all()
+    )
+
+    if not unmatched:
+        return
+
+    for actual in unmatched:
+        # Find planned workouts on the same day
+        planned_on_day = (
+            db.query(PlannedWorkoutORM)
+            .filter(PlannedWorkoutORM.date == actual.date)
+            .all()
+        )
+
+        # Filter to compatible types
+        compatible = [
+            p for p in planned_on_day
+            if _types_compatible(actual.type, WorkoutType(p.type.value))
+        ]
+
+        if len(compatible) != 1:
+            continue
+
+        planned = compatible[0]
+
+        # Check this planned workout isn't already claimed by another actual
+        already_matched = (
+            db.query(ActualWorkoutORM)
+            .filter(
+                ActualWorkoutORM.planned_workout_id == planned.id,
+                ActualWorkoutORM.id != actual.id,
+            )
+            .first()
+        )
+        if already_matched:
+            continue
+
+        actual.planned_workout_id = planned.id
+
+    db.commit()

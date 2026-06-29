@@ -140,21 +140,21 @@ function DayColumn({ day, onAddClick, onEdit, onDelete, onCardClick }: DayColumn
             return (
               <div
                 key={a.id}
-                className="relative rounded-xl border border-amber-200/80 bg-amber-50/60 backdrop-blur-sm shadow-sm overflow-hidden cursor-pointer hover:bg-amber-100/60 transition-colors"
+                className="relative rounded-xl border border-blue-200/80 bg-blue-50/60 backdrop-blur-sm shadow-sm overflow-hidden cursor-pointer hover:bg-blue-100/60 transition-colors"
                 onClick={() => onCardClick(null, a)}
               >
-                <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-amber-400/60 rounded-l-xl" />
+                <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-blue-400/60 rounded-l-xl" />
                 <div className="pl-4 pr-3 py-2">
                   <div className="flex items-center gap-1.5 mb-1.5">
-                    <span className="[&>svg]:w-4 [&>svg]:h-4 text-amber-500">{typeIcon[a.type]}</span>
-                    <span className="text-[13px] font-semibold text-amber-900 leading-tight">
+                    <span className="[&>svg]:w-4 [&>svg]:h-4 text-blue-500">{typeIcon[a.type]}</span>
+                    <span className="text-[13px] font-semibold text-blue-900 leading-tight">
                       {a.name ?? typeLabel[a.type]}
                     </span>
                   </div>
                   {chips.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {chips.map((s) => (
-                        <span key={s} className="text-[11px] font-medium text-amber-700 bg-amber-100/80 px-1.5 py-0.5 rounded-md">{s}</span>
+                        <span key={s} className="text-[11px] font-medium text-blue-700 bg-blue-100/80 px-1.5 py-0.5 rounded-md">{s}</span>
                       ))}
                     </div>
                   )}

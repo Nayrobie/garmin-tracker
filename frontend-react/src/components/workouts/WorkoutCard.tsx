@@ -40,7 +40,20 @@ export function WorkoutCard({ planned, actual, onEdit, onDelete, onClick }: Work
     zIndex: isDragging ? 50 : undefined,
   };
 
-  const colorClass = 'bg-blue-500/10 text-blue-700 border-blue-200';
+  // Visual state: completed (green) vs planned-only (gray dashed)
+  const isCompleted = actual != null;
+  const cardBorder = isCompleted
+    ? 'border-green-300/80'
+    : 'border-gray-200 border-dashed';
+  const cardBg = isCompleted
+    ? 'bg-green-50/60'
+    : 'bg-white/50';
+  const accentBar = isCompleted
+    ? 'bg-green-500/60'
+    : 'bg-gray-300/60';
+  const textColor = isCompleted
+    ? 'text-green-800'
+    : 'text-gray-500';
 
   const plannedChips = [
     planned.goal_duration_min ? formatDuration(planned.goal_duration_min) : null,
@@ -55,23 +68,26 @@ export function WorkoutCard({ planned, actual, onEdit, onDelete, onClick }: Work
       style={style}
       className={[
         'group relative rounded-xl border overflow-hidden',
-        'bg-white/70 backdrop-blur-sm shadow-sm',
+        'backdrop-blur-sm shadow-sm',
         'cursor-grab active:cursor-grabbing select-none',
-        colorClass,
+        cardBorder,
+        cardBg,
+        textColor,
       ].join(' ')}
       {...attributes}
       {...listeners}
       onClick={() => onClick(planned, actual ?? null)}
     >
       {/* Left accent bar */}
-      <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl bg-current opacity-30" />
+      <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl ${accentBar}`} />
 
       <div className="pl-4 pr-3 py-2">
         {/* Icon + label + actions */}
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-1.5">
-            <span className="[&>svg]:w-4 [&>svg]:h-4">{typeIcon[planned.type]}</span>
-            <span className="text-[13px] font-semibold leading-tight">{typeLabel[planned.type]}</span>
+            <span className={`[&>svg]:w-4 [&>svg]:h-4 ${isCompleted ? 'text-green-600' : 'text-gray-400'}`}>{typeIcon[planned.type]}</span>
+            <span className={`text-[13px] font-semibold leading-tight ${isCompleted ? 'text-green-800' : 'text-gray-700'}`}>{typeLabel[planned.type]}</span>
+            {isCompleted && <span className="text-[10px] text-green-600">✓</span>}
           </div>
           <div
             className="hidden group-hover:flex items-center gap-0.5"
@@ -93,9 +109,9 @@ export function WorkoutCard({ planned, actual, onEdit, onDelete, onClick }: Work
         {/* Planned chips */}
         {plannedChips.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-1">
-            <span className="text-[10px] text-current/40 self-center">↑</span>
+            <span className="text-[10px] text-gray-400 self-center">↑</span>
             {plannedChips.map((s) => (
-              <span key={s} className="text-[11px] font-medium bg-current/10 px-1.5 py-0.5 rounded-md">{s}</span>
+              <span key={s} className="text-[11px] font-medium bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-md">{s}</span>
             ))}
           </div>
         )}
@@ -103,15 +119,15 @@ export function WorkoutCard({ planned, actual, onEdit, onDelete, onClick }: Work
         {/* Actual chips */}
         {actualChips.length > 0 && (
           <div className="flex flex-wrap gap-1">
-            <span className="text-[10px] text-current/40 self-center">✓</span>
+            <span className="text-[10px] text-green-500 self-center">✓</span>
             {actualChips.map((s) => (
-              <span key={s} className="text-[11px] font-medium bg-current/10 px-1.5 py-0.5 rounded-md opacity-75">{s}</span>
+              <span key={s} className="text-[11px] font-medium bg-green-100/80 text-green-700 px-1.5 py-0.5 rounded-md">{s}</span>
             ))}
           </div>
         )}
 
         {planned.notes && (
-          <p className="mt-1 text-[10px] text-current/40 line-clamp-1">{planned.notes}</p>
+          <p className="mt-1 text-[10px] text-gray-400 line-clamp-1">{planned.notes}</p>
         )}
       </div>
 

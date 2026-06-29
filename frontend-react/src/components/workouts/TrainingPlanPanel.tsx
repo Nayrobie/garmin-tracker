@@ -125,9 +125,9 @@ export function TrainingPlanPanel() {
           </div>
 
           {/* Weekly breakdown table */}
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-auto max-h-[220px]">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 bg-white/80 backdrop-blur-sm z-10">
                 <tr className="text-left text-xs text-gray-400 uppercase tracking-wider border-b border-gray-100">
                   <th className="pb-2 pr-3">Week</th>
                   <th className="pb-2 pr-3">Dates</th>

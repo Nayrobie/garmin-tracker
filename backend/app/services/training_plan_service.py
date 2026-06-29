@@ -503,6 +503,10 @@ def generate_training_plan(
     db.add_all(workouts_to_add)
     db.commit()
 
+    # Auto-match existing actual workouts to newly created plan
+    from app.services.garmin_service import _auto_match_workouts
+    _auto_match_workouts(db)
+
     return {
         "plan_group_id": plan_group_id,
         "weeks_generated": weeks_ahead,
