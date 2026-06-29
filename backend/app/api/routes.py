@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -30,6 +31,7 @@ from app.models.workout import (
 )
 from app.services.body_composition_service import BodyCompositionRecord, load_body_composition
 from app.services.garmin_service import sync_garmin_activities
+from app.services.training_plan_service import adjust_plan_from_progress, generate_training_plan
 from app.config import TRAINING_RULES
 
 router = APIRouter(prefix="/api")
@@ -529,4 +531,60 @@ def get_running_stats(
         personal_records=personal_records,
         total_activities=total_activities,
     )
+
+
+# ---------------------------------------------------------------------------
+# Training Plan Generation
+# ---------------------------------------------------------------------------
+
+
+class GeneratePlanRequest(BaseModel):
+    """Request body for training plan generation."""
+
+    starting_volume_km: float = 12.0
+    weeks_ahead: int = 17
+    start_date: Optional[date] = None
+
+
+@router.post("/schedule/generate-plan", status_code=201)
+def generate_plan(
+    payload: GeneratePlanRequest, db: Session = Depends(get_db)
+) -> dict:
+    """Generate a progressive multi-week training plan.
+
+    Creates planned run workouts following the 10% rule with 3 runs/week.
+
+    Args:
+        payload: Plan generation parameters.
+        db: Database session.
+
+    Returns:
+        Plan summary with weekly breakdown.
+    """
+    return generate_training_plan(
+        db=db,
+        starting_volume_km=payload.starting_volume_km,
+        weeks_ahead=payload.weeks_ahead,
+        start_date=payload.start_date,
+    )
+
+
+@router.post("/schedule/adjust-plan", status_code=201)
+def adjust_plan(
+    weeks_ahead: Optional[int] = None, db: Session = Depends(get_db)
+) -> dict:
+    """Adjust the training plan based on current week's actual progress.
+
+    Uses completed running volume as the new baseline and regenerates
+    future weeks with 10% progression. If weeks_ahead is None, auto-detects
+    based on upcoming races.
+
+    Args:
+        weeks_ahead: Number of future weeks to regenerate.
+        db: Database session.
+
+    Returns:
+        Adjusted plan summary.
+    """
+    return adjust_plan_from_progress(db=db, weeks_ahead=weeks_ahead)
 

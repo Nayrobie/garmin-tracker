@@ -16,6 +16,7 @@ export const typeIcon: Record<WorkoutType, ReactElement> = {
   cycle: <Bike size={14} />,
   strength: <Dumbbell size={14} />,
   yoga: <Waves size={14} />,
+  pilates: <Waves size={14} />,
   other: <MoreHorizontal size={14} />,
 };
 
@@ -24,6 +25,7 @@ export const typeColor: Record<WorkoutType, string> = {
   cycle: 'bg-green-500/10 text-green-700 border-green-200',
   strength: 'bg-orange-500/10 text-orange-700 border-orange-200',
   yoga: 'bg-purple-500/10 text-purple-700 border-purple-200',
+  pilates: 'bg-pink-500/10 text-pink-700 border-pink-200',
   other: 'bg-gray-100 text-gray-600 border-gray-200',
 };
 
@@ -32,6 +34,7 @@ export const typeLabel: Record<WorkoutType, string> = {
   cycle: 'Cycle',
   strength: 'Strength',
   yoga: 'Yoga',
+  pilates: 'Pilates',
   other: 'Other',
 };
 

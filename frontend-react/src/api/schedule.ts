@@ -7,6 +7,7 @@ import type {
   UpdatePlannedWorkoutPayload,
   PlannedWorkout,
   WeeklySchedule,
+  TrainingPlanResponse,
 } from '../types';
 
 const BASE = '/api';
@@ -61,4 +62,27 @@ export const scheduleApi = {
 
   getSyncStatus: (): Promise<{ last_sync: string | null }> =>
     request('/garmin/sync/status'),
+
+  /** Generate a progressive multi-week training plan. */
+  generatePlan: (opts?: {
+    startingVolumeKm?: number;
+    weeksAhead?: number;
+    startDate?: string;
+  }): Promise<TrainingPlanResponse> =>
+    request<TrainingPlanResponse>('/schedule/generate-plan', {
+      method: 'POST',
+      body: JSON.stringify({
+        starting_volume_km: opts?.startingVolumeKm ?? 12,
+        weeks_ahead: opts?.weeksAhead ?? 7,
+        start_date: opts?.startDate ?? null,
+      }),
+    }),
+
+  /** Adjust plan based on current week's actual progress. */
+  adjustPlan: (weeksAhead?: number): Promise<TrainingPlanResponse> => {
+    const qs = weeksAhead != null ? `?weeks_ahead=${weeksAhead}` : '';
+    return request<TrainingPlanResponse>(`/schedule/adjust-plan${qs}`, {
+      method: 'POST',
+    });
+  },
 };

@@ -35,6 +35,7 @@ class WorkoutType(str, enum.Enum):
     cycle = "cycle"
     strength = "strength"
     yoga = "yoga"
+    pilates = "pilates"
     other = "other"
 
 

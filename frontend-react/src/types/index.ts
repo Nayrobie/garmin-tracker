@@ -20,7 +20,7 @@ export type UpdateRacePayload = Partial<CreateRacePayload>;
 // Workouts
 // ---------------------------------------------------------------------------
 
-export type WorkoutType = 'run' | 'cycle' | 'strength' | 'yoga' | 'other';
+export type WorkoutType = 'run' | 'cycle' | 'strength' | 'yoga' | 'pilates' | 'other';
 
 export type Recurrence = 'none' | 'weekly' | 'biweekly' | 'monthly';
 
@@ -133,4 +133,28 @@ export interface RunningStats {
   progression: RunningPeriodStats[];
   personal_records: PersonalRecord[];
   total_activities: number;
+}
+
+// ---------------------------------------------------------------------------
+// Training Plan
+// ---------------------------------------------------------------------------
+
+export interface TrainingPlanWeek {
+  week: number;
+  week_start: string;
+  total_km: number;
+  easy_km: number;
+  short_km: number;
+  long_km: number;
+  is_interval_week: boolean;
+  week_type: 'normal' | 'taper' | 'race';
+  cross_training: { type: string; duration_min: number }[];
+}
+
+export interface TrainingPlanResponse {
+  plan_group_id: string;
+  weeks_generated: number;
+  total_workouts: number;
+  starting_volume_km: number;
+  weeks: TrainingPlanWeek[];
 }

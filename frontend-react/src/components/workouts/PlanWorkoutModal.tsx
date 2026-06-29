@@ -13,6 +13,7 @@ const WORKOUT_TYPES: { value: WorkoutType; label: string }[] = [
   { value: 'cycle', label: 'Cycle' },
   { value: 'strength', label: 'Strength' },
   { value: 'yoga', label: 'Yoga' },
+  { value: 'pilates', label: 'Pilates' },
   { value: 'other', label: 'Other' },
 ];
 

@@ -5,6 +5,7 @@ import { useState, useCallback } from 'react';
 import { WeekStrip } from '../components/workouts/WeekStrip';
 import { WeeklyStatsBar } from '../components/workouts/WeeklyStatsBar';
 import { RunningStatsPanel } from '../components/workouts/RunningStatsPanel';
+import { TrainingPlanPanel } from '../components/workouts/TrainingPlanPanel';
 
 export function CalendarPage() {
   const [weekStart, setWeekStart] = useState<Date | null>(null);
@@ -24,6 +25,7 @@ export function CalendarPage() {
       <div className="space-y-4">
         <WeeklyStatsBar weekStart={weekStart} refreshKey={refreshKey} />
         <WeekStrip onWeekChange={handleWeekChange} onSyncComplete={handleSyncComplete} />
+        <TrainingPlanPanel />
         <RunningStatsPanel />
       </div>
     </div>
