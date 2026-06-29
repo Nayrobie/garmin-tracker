@@ -562,9 +562,12 @@ def sync_menstrual_cycles(
 
 
 def sync_hrv_and_cycle_day(
-    db: Session, *, days_back: int = 30
+    db: Session, *, days_back: int = 365
 ) -> dict:
     """Enrich sleep records with HRV data and menstrual cycle day/phase.
+
+    Fetches HRV + resting HR from Garmin for each sleep record that doesn't
+    already have HRV data, then computes cycle day/phase from stored cycles.
 
     Args:
         db: Active database session.
@@ -573,6 +576,8 @@ def sync_hrv_and_cycle_day(
     Returns:
         Dict summarising the enrichment result.
     """
+    import time
+
     from app.models.workout import MenstrualCycleORM, SleepRecordORM
 
     if not GARMIN_EMAIL or not GARMIN_PASSWORD:
@@ -592,7 +597,6 @@ def sync_hrv_and_cycle_day(
 
     end_date = date.today()
     start_date = end_date - timedelta(days=days_back)
-    enriched = 0
 
     # Fetch all cycles for phase calculation
     cycles = (
@@ -601,43 +605,85 @@ def sync_hrv_and_cycle_day(
         .all()
     )
 
-    current = start_date
-    while current <= end_date:
-        record = (
-            db.query(SleepRecordORM)
-            .filter(SleepRecordORM.date == current)
-            .first()
+    # Get sleep records that still need HRV enrichment
+    records = (
+        db.query(SleepRecordORM)
+        .filter(
+            SleepRecordORM.date >= start_date,
+            SleepRecordORM.date <= end_date,
+            SleepRecordORM.hrv_overnight.is_(None),
         )
-        if not record:
-            current += timedelta(days=1)
-            continue
+        .order_by(SleepRecordORM.date.asc())
+        .all()
+    )
 
+    if not records:
+        # Still update cycle day/phase for any records missing it
+        phase_only = (
+            db.query(SleepRecordORM)
+            .filter(
+                SleepRecordORM.date >= start_date,
+                SleepRecordORM.date <= end_date,
+                SleepRecordORM.cycle_phase.is_(None),
+            )
+            .all()
+        )
+        for rec in phase_only:
+            cycle_day, phase = _calc_cycle_day(rec.date, cycles)
+            rec.cycle_day = cycle_day
+            rec.cycle_phase = phase
+        db.commit()
+        return {"enriched": len(phase_only), "error": None}
+
+    enriched = 0
+    errors = 0
+
+    for record in records:
         # Fetch HRV
         try:
-            hrv_data = client.get_hrv_data(current.isoformat())
+            hrv_data = client.get_hrv_data(record.date.isoformat())
             summary = hrv_data.get("hrvSummary", {}) if isinstance(hrv_data, dict) else {}
             record.hrv_overnight = summary.get("lastNightAvg")
             record.hrv_status = summary.get("status")
-        except Exception:
-            pass
+        except Exception as exc:
+            errors += 1
+            if "429" in str(exc) or "Too Many" in str(exc):
+                logger.warning("Rate limited at %s, committing progress.", record.date)
+                db.commit()
+                return {
+                    "enriched": enriched,
+                    "error": f"Rate limited after {enriched} records. Run again later for remaining.",
+                }
+            logger.debug("HRV fetch failed for %s: %s", record.date, exc)
 
         # Fetch resting HR from sleep data
         try:
-            sleep_data = client.get_sleep_data(current.isoformat())
+            sleep_data = client.get_sleep_data(record.date.isoformat())
             record.resting_hr = sleep_data.get("restingHeartRate")
-        except Exception:
-            pass
+        except Exception as exc:
+            if "429" in str(exc) or "Too Many" in str(exc):
+                db.commit()
+                return {
+                    "enriched": enriched,
+                    "error": f"Rate limited after {enriched} records. Run again later for remaining.",
+                }
 
         # Calculate cycle day and phase
-        cycle_day, phase = _calc_cycle_day(current, cycles)
+        cycle_day, phase = _calc_cycle_day(record.date, cycles)
         record.cycle_day = cycle_day
         record.cycle_phase = phase
 
         enriched += 1
-        current += timedelta(days=1)
+
+        # Commit every 10 records and throttle to avoid rate limits
+        if enriched % 10 == 0:
+            db.commit()
+            time.sleep(1)
+        else:
+            time.sleep(0.3)
 
     db.commit()
-    logger.info("HRV/cycle enrichment complete: %d records.", enriched)
+    logger.info("HRV/cycle enrichment complete: %d records enriched, %d errors.", enriched, errors)
     return {"enriched": enriched, "error": None}
 
 
