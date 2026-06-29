@@ -12,6 +12,8 @@ from app.models.workout import (
     ActualWorkoutRead,
     DaySchedule,
     GarminSyncStateORM,
+    MenstrualCycleORM,
+    MenstrualCycleRead,
     PlannedWorkoutCreate,
     PlannedWorkoutORM,
     PlannedWorkoutRead,
@@ -650,3 +652,62 @@ def trigger_sleep_sync(
     from app.services.garmin_service import sync_garmin_sleep
 
     return sync_garmin_sleep(db, days_back=days_back)
+
+
+# ---------------------------------------------------------------------------
+# Menstrual Cycle endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/cycles", response_model=List[MenstrualCycleRead])
+def get_menstrual_cycles(db: Session = Depends(get_db)) -> list:
+    """Return all menstrual cycles ordered by start date descending.
+
+    Args:
+        db: Database session.
+
+    Returns:
+        List of menstrual cycle records.
+    """
+    records = (
+        db.query(MenstrualCycleORM)
+        .order_by(MenstrualCycleORM.start_date.desc())
+        .all()
+    )
+    return [MenstrualCycleRead.model_validate(r) for r in records]
+
+
+@router.post("/cycles/sync", status_code=200)
+def trigger_cycle_sync(
+    days_back: int = 365, db: Session = Depends(get_db)
+) -> dict:
+    """Sync menstrual cycle data from Garmin.
+
+    Args:
+        days_back: How far back to fetch.
+        db: Database session.
+
+    Returns:
+        Sync result summary.
+    """
+    from app.services.garmin_service import sync_menstrual_cycles
+
+    return sync_menstrual_cycles(db, days_back=days_back)
+
+
+@router.post("/sleep/enrich", status_code=200)
+def trigger_sleep_enrichment(
+    days_back: int = 30, db: Session = Depends(get_db)
+) -> dict:
+    """Enrich sleep records with HRV data and menstrual cycle day/phase.
+
+    Args:
+        days_back: How many days to enrich.
+        db: Database session.
+
+    Returns:
+        Enrichment result summary.
+    """
+    from app.services.garmin_service import sync_hrv_and_cycle_day
+
+    return sync_hrv_and_cycle_day(db, days_back=days_back)

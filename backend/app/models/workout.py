@@ -11,7 +11,7 @@ from datetime import date as DateType, datetime
 from typing import List, Optional
 
 from pydantic import BaseModel
-from sqlalchemy import Date, DateTime, Enum, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -190,6 +190,11 @@ class SleepRecordORM(Base):
     sleep_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     start_time: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     end_time: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    hrv_overnight: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    hrv_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    resting_hr: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    cycle_day: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    cycle_phase: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
@@ -211,6 +216,45 @@ class SleepRecordRead(BaseModel):
     sleep_score: Optional[int] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None
+    hrv_overnight: Optional[float] = None
+    hrv_status: Optional[str] = None
+    resting_hr: Optional[int] = None
+    cycle_day: Optional[int] = None
+    cycle_phase: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Menstrual Cycle ORM model
+# ---------------------------------------------------------------------------
+
+
+class MenstrualCycleORM(Base):
+    """A single menstrual cycle (from period start to next period start)."""
+
+    __tablename__ = "menstrual_cycles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    start_date: Mapped[DateType] = mapped_column(Date, nullable=False, unique=True, index=True)
+    period_length: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    cycle_length: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    fertile_window_start_day: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    fertile_window_length: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    is_predicted: Mapped[bool] = mapped_column(Boolean, default=False)
+    synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class MenstrualCycleRead(BaseModel):
+    """Menstrual cycle response schema."""
+
+    id: int
+    start_date: DateType
+    period_length: Optional[int] = None
+    cycle_length: Optional[int] = None
+    fertile_window_start_day: Optional[int] = None
+    fertile_window_length: Optional[int] = None
+    is_predicted: bool = False
 
     model_config = {"from_attributes": True}
 

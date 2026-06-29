@@ -174,4 +174,19 @@ export interface SleepRecord {
   sleep_score: number | null;
   start_time: string | null;
   end_time: string | null;
+  hrv_overnight: number | null;
+  hrv_status: string | null;
+  resting_hr: number | null;
+  cycle_day: number | null;
+  cycle_phase: string | null;
+}
+
+export interface MenstrualCycle {
+  id: number;
+  start_date: string;
+  period_length: number | null;
+  cycle_length: number | null;
+  fertile_window_start_day: number | null;
+  fertile_window_length: number | null;
+  is_predicted: boolean;
 }

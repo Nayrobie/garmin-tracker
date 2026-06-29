@@ -1,7 +1,7 @@
 /**
  * API client for sleep endpoints.
  */
-import type { SleepRecord } from '../types';
+import type { MenstrualCycle, SleepRecord } from '../types';
 
 const BASE = '/api';
 
@@ -25,4 +25,16 @@ export const sleepApi = {
   /** Trigger a Garmin sleep sync. */
   sync: (daysBack: number = 30): Promise<{ synced: number; error: string | null }> =>
     request(`/sleep/sync?days_back=${daysBack}`, { method: 'POST' }),
+
+  /** Enrich sleep records with HRV + cycle day. */
+  enrich: (daysBack: number = 30): Promise<{ enriched: number; error: string | null }> =>
+    request(`/sleep/enrich?days_back=${daysBack}`, { method: 'POST' }),
+
+  /** Get menstrual cycles. */
+  getCycles: (): Promise<MenstrualCycle[]> =>
+    request<MenstrualCycle[]>('/cycles'),
+
+  /** Sync menstrual cycles from Garmin. */
+  syncCycles: (daysBack: number = 365): Promise<{ synced: number; error: string | null }> =>
+    request(`/cycles/sync?days_back=${daysBack}`, { method: 'POST' }),
 };

@@ -463,3 +463,228 @@ def sync_garmin_sleep(
     db.commit()
     logger.info("Sleep sync complete: %d new records.", inserted)
     return {"synced": inserted, "error": None}
+
+
+# ---------------------------------------------------------------------------
+# Menstrual Cycle Sync
+# ---------------------------------------------------------------------------
+
+CYCLE_PHASES = {1: "menstruation", 2: "follicular", 3: "ovulation", 4: "luteal"}
+
+
+def sync_menstrual_cycles(
+    db: Session, *, days_back: int = 365
+) -> dict:
+    """Pull menstrual cycle data from Garmin Connect and upsert into the DB.
+
+    Args:
+        db: Active database session.
+        days_back: How far back to fetch cycle data.
+
+    Returns:
+        Dict summarising the sync result.
+    """
+    from app.models.workout import MenstrualCycleORM
+
+    if not GARMIN_EMAIL or not GARMIN_PASSWORD:
+        return {"synced": 0, "error": "Garmin credentials not configured."}
+
+    try:
+        from garminconnect import Garmin  # type: ignore[import]
+    except ImportError:
+        return {"synced": 0, "error": "garminconnect package not installed."}
+
+    try:
+        client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
+        client.login()
+    except Exception as exc:
+        logger.exception("Garmin menstrual sync login failed")
+        return {"synced": 0, "error": f"Login failed: {exc}"}
+
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days_back)
+    inserted = 0
+
+    # Garmin limits to 92-day windows, so chunk the requests
+    current_start = start_date
+    all_summaries: list[dict] = []
+    while current_start < end_date:
+        chunk_end = min(current_start + timedelta(days=91), end_date)
+        try:
+            data = client.get_menstrual_calendar_data(
+                current_start.isoformat(), chunk_end.isoformat()
+            )
+            summaries = data.get("cycleSummaries", [])
+            all_summaries.extend(summaries)
+        except Exception:
+            pass
+        current_start = chunk_end + timedelta(days=1)
+
+    for summary in all_summaries:
+        start_str = summary.get("startDate")
+        if not start_str:
+            continue
+        try:
+            cycle_start = date.fromisoformat(start_str)
+        except (ValueError, TypeError):
+            continue
+
+        existing = (
+            db.query(MenstrualCycleORM)
+            .filter(MenstrualCycleORM.start_date == cycle_start)
+            .first()
+        )
+
+        fields = {
+            "period_length": summary.get("periodLength"),
+            "fertile_window_start_day": summary.get("fertileWindowStart"),
+            "fertile_window_length": summary.get("lengthOfFertileWindow"),
+            "is_predicted": summary.get("predictedCycle", False),
+            "synced_at": datetime.utcnow(),
+        }
+
+        if existing:
+            for k, v in fields.items():
+                setattr(existing, k, v)
+        else:
+            row = MenstrualCycleORM(start_date=cycle_start, **fields)
+            db.add(row)
+            inserted += 1
+
+    db.commit()
+    logger.info("Menstrual cycle sync complete: %d new cycles.", inserted)
+    return {"synced": inserted, "error": None}
+
+
+# ---------------------------------------------------------------------------
+# HRV + Cycle Day Enrichment for Sleep Records
+# ---------------------------------------------------------------------------
+
+
+def sync_hrv_and_cycle_day(
+    db: Session, *, days_back: int = 30
+) -> dict:
+    """Enrich sleep records with HRV data and menstrual cycle day/phase.
+
+    Args:
+        db: Active database session.
+        days_back: How many days back to enrich.
+
+    Returns:
+        Dict summarising the enrichment result.
+    """
+    from app.models.workout import MenstrualCycleORM, SleepRecordORM
+
+    if not GARMIN_EMAIL or not GARMIN_PASSWORD:
+        return {"enriched": 0, "error": "Garmin credentials not configured."}
+
+    try:
+        from garminconnect import Garmin  # type: ignore[import]
+    except ImportError:
+        return {"enriched": 0, "error": "garminconnect package not installed."}
+
+    try:
+        client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
+        client.login()
+    except Exception as exc:
+        logger.exception("Garmin HRV sync login failed")
+        return {"enriched": 0, "error": f"Login failed: {exc}"}
+
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days_back)
+    enriched = 0
+
+    # Fetch all cycles for phase calculation
+    cycles = (
+        db.query(MenstrualCycleORM)
+        .order_by(MenstrualCycleORM.start_date.asc())
+        .all()
+    )
+
+    current = start_date
+    while current <= end_date:
+        record = (
+            db.query(SleepRecordORM)
+            .filter(SleepRecordORM.date == current)
+            .first()
+        )
+        if not record:
+            current += timedelta(days=1)
+            continue
+
+        # Fetch HRV
+        try:
+            hrv_data = client.get_hrv_data(current.isoformat())
+            summary = hrv_data.get("hrvSummary", {}) if isinstance(hrv_data, dict) else {}
+            record.hrv_overnight = summary.get("lastNightAvg")
+            record.hrv_status = summary.get("status")
+        except Exception:
+            pass
+
+        # Fetch resting HR from sleep data
+        try:
+            sleep_data = client.get_sleep_data(current.isoformat())
+            record.resting_hr = sleep_data.get("restingHeartRate")
+        except Exception:
+            pass
+
+        # Calculate cycle day and phase
+        cycle_day, phase = _calc_cycle_day(current, cycles)
+        record.cycle_day = cycle_day
+        record.cycle_phase = phase
+
+        enriched += 1
+        current += timedelta(days=1)
+
+    db.commit()
+    logger.info("HRV/cycle enrichment complete: %d records.", enriched)
+    return {"enriched": enriched, "error": None}
+
+
+def _calc_cycle_day(
+    target_date: date, cycles: list
+) -> tuple[int | None, str | None]:
+    """Calculate the cycle day and phase for a given date.
+
+    Args:
+        target_date: The date to check.
+        cycles: List of MenstrualCycleORM objects ordered by start_date.
+
+    Returns:
+        Tuple of (cycle_day, phase_name) or (None, None).
+    """
+    for i, cycle in enumerate(cycles):
+        cycle_start = cycle.start_date
+        # Determine cycle end (next cycle start or estimated)
+        if i + 1 < len(cycles):
+            cycle_end = cycles[i + 1].start_date - timedelta(days=1)
+        else:
+            # Current cycle — use predicted length or 28 days
+            est_length = cycle.cycle_length or 63  # from Garmin predicted
+            cycle_end = cycle_start + timedelta(days=est_length - 1)
+
+        if cycle_start <= target_date <= cycle_end:
+            day = (target_date - cycle_start).days + 1
+            phase = _day_to_phase(day, cycle.period_length or 5)
+            return day, phase
+
+    return None, None
+
+
+def _day_to_phase(day: int, period_length: int) -> str:
+    """Map cycle day to phase name.
+
+    Args:
+        day: Day in cycle (1-based).
+        period_length: Length of menstruation in days.
+
+    Returns:
+        Phase name string.
+    """
+    if day <= period_length:
+        return "menstruation"
+    if day <= 13:
+        return "follicular"
+    if day <= 16:
+        return "ovulation"
+    return "luteal"
