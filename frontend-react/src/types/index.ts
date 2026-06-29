@@ -109,3 +109,28 @@ export interface WeeklyStats {
   volume_change_pct: number | null;
   volume_alert: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Running Stats & Personal Records
+// ---------------------------------------------------------------------------
+
+export interface RunningPeriodStats {
+  period: string;
+  total_km: number;
+  run_count: number;
+  avg_pace: string | null;
+  avg_hr: number | null;
+}
+
+export interface PersonalRecord {
+  distance_label: string;
+  value: string;
+  date: string;
+  activity_name: string | null;
+}
+
+export interface RunningStats {
+  progression: RunningPeriodStats[];
+  personal_records: PersonalRecord[];
+  total_activities: number;
+}

@@ -23,6 +23,10 @@ from app.models.workout import (
     RaceUpdate,
     WeeklySchedule,
     WeeklyStats,
+    RunningPeriodStats,
+    RunningStats,
+    PersonalRecord,
+    WorkoutType,
 )
 from app.services.body_composition_service import BodyCompositionRecord, load_body_composition
 from app.services.garmin_service import sync_garmin_activities
@@ -396,5 +400,133 @@ def get_weekly_stats(
         prev_week_volume_km=prev_week_volume_km,
         volume_change_pct=volume_change_pct,
         volume_alert=volume_alert,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Running Stats & Personal Records
+# ---------------------------------------------------------------------------
+
+
+def _pace_to_seconds(pace: str) -> float:
+    """Convert 'MM:SS' pace string to total seconds."""
+    parts = pace.split(":")
+    return int(parts[0]) * 60 + int(parts[1])
+
+
+def _seconds_to_pace(secs: float) -> str:
+    """Convert total seconds to 'MM:SS' pace string."""
+    m, s = divmod(int(secs), 60)
+    return f"{m}:{s:02d}"
+
+
+@router.get("/stats/running", response_model=RunningStats)
+def get_running_stats(
+    granularity: str = "yearly", db: Session = Depends(get_db)
+) -> RunningStats:
+    """Return running progression and personal records.
+
+    Args:
+        granularity: 'yearly' or 'monthly'.
+        db: Database session.
+
+    Returns:
+        RunningStats with progression data, PRs, and total activity count.
+    """
+    runs = (
+        db.query(ActualWorkoutORM)
+        .filter(ActualWorkoutORM.type == WorkoutType.run)
+        .order_by(ActualWorkoutORM.date)
+        .all()
+    )
+
+    # Filter out hikes mapped as runs (pace > 12:00/km = hiking)
+    actual_runs = [
+        r for r in runs
+        if r.avg_pace_per_km and _pace_to_seconds(r.avg_pace_per_km) < 720
+    ]
+
+    # --- Progression ---
+    from collections import defaultdict
+
+    period_data: dict[str, list] = defaultdict(list)
+    for r in actual_runs:
+        if granularity == "monthly":
+            key = r.date.strftime("%Y-%m")
+        else:
+            key = str(r.date.year)
+        period_data[key].append(r)
+
+    progression: list[RunningPeriodStats] = []
+    for period_key in sorted(period_data.keys()):
+        group = period_data[period_key]
+        distances = [r.distance_km for r in group if r.distance_km]
+        hrs = [r.avg_hr for r in group if r.avg_hr]
+        paces = [_pace_to_seconds(r.avg_pace_per_km) for r in group if r.avg_pace_per_km]
+
+        progression.append(RunningPeriodStats(
+            period=period_key,
+            total_km=round(sum(distances), 2),
+            run_count=len(group),
+            avg_pace=_seconds_to_pace(sum(paces) / len(paces)) if paces else None,
+            avg_hr=round(sum(hrs) / len(hrs)) if hrs else None,
+        ))
+
+    # --- Personal Records ---
+    personal_records: list[PersonalRecord] = []
+
+    # Best pace for distances (only if run >= that distance)
+    pr_distances = [
+        ("1K", 1.0),
+        ("5K", 5.0),
+        ("10K", 10.0),
+        ("15K", 15.0),
+        ("20K", 20.0),
+    ]
+    for label, min_km in pr_distances:
+        eligible = [
+            r for r in actual_runs
+            if r.distance_km and r.distance_km >= min_km and r.avg_pace_per_km
+        ]
+        if eligible:
+            best = min(eligible, key=lambda r: _pace_to_seconds(r.avg_pace_per_km))
+            personal_records.append(PersonalRecord(
+                distance_label=label,
+                value=f"{best.avg_pace_per_km}/km",
+                date=best.date,
+                activity_name=best.name,
+            ))
+
+    # Farthest run
+    if actual_runs:
+        farthest = max(actual_runs, key=lambda r: r.distance_km or 0)
+        if farthest.distance_km:
+            personal_records.append(PersonalRecord(
+                distance_label="Farthest",
+                value=f"{farthest.distance_km:.2f} km",
+                date=farthest.date,
+                activity_name=farthest.name,
+            ))
+
+    # Longest run (by duration)
+    runs_with_duration = [r for r in actual_runs if r.duration_min]
+    if runs_with_duration:
+        longest = max(runs_with_duration, key=lambda r: r.duration_min)
+        hours, mins = divmod(int(longest.duration_min), 60)
+        duration_str = f"{hours}h{mins:02d}" if hours else f"{int(longest.duration_min)} min"
+        personal_records.append(PersonalRecord(
+            distance_label="Longest",
+            value=duration_str,
+            date=longest.date,
+            activity_name=longest.name,
+        ))
+
+    # Total activities (all types)
+    total_activities = db.query(ActualWorkoutORM).count()
+
+    return RunningStats(
+        progression=progression,
+        personal_records=personal_records,
+        total_activities=total_activities,
     )
 

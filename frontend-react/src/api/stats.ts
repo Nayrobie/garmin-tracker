@@ -1,7 +1,7 @@
 /**
- * API client: fetch wrapper for weekly stats endpoint.
+ * API client: fetch wrapper for stats endpoints.
  */
-import type { WeeklyStats } from '../types';
+import type { WeeklyStats, RunningStats } from '../types';
 
 const BASE = '/api';
 
@@ -20,4 +20,8 @@ export const statsApi = {
     const qs = date ? `?date_str=${date}` : '';
     return request<WeeklyStats>(`/stats/weekly${qs}`);
   },
+
+  /** Fetch running progression and personal records. */
+  getRunningStats: (granularity: 'yearly' | 'monthly' = 'yearly'): Promise<RunningStats> =>
+    request<RunningStats>(`/stats/running?granularity=${granularity}`),
 };

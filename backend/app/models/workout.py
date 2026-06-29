@@ -268,3 +268,35 @@ class WeeklyStats(BaseModel):
     volume_change_pct: Optional[float]
     volume_alert: bool
 
+
+# ---------------------------------------------------------------------------
+# Pydantic schemas — Running Stats & Personal Records
+# ---------------------------------------------------------------------------
+
+
+class RunningPeriodStats(BaseModel):
+    """Running metrics for a single time period (month or year)."""
+
+    period: str  # "2026" or "2026-06"
+    total_km: float
+    run_count: int
+    avg_pace: Optional[str]  # "MM:SS"
+    avg_hr: Optional[int]
+
+
+class PersonalRecord(BaseModel):
+    """A single personal record entry."""
+
+    distance_label: str  # "1K", "5K", "10K", "Farthest"
+    value: str  # pace "MM:SS/km" or distance "X.XX km"
+    date: DateType
+    activity_name: Optional[str]
+
+
+class RunningStats(BaseModel):
+    """Full running statistics response."""
+
+    progression: List[RunningPeriodStats]
+    personal_records: List[PersonalRecord]
+    total_activities: int
+

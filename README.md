@@ -60,7 +60,7 @@ npm install
 **Terminal 1 — Backend**:
 ```bash
 cd backend
-python -m uvicorn app.main:app --reload
+poetry run uvicorn app.main:app --reload
 # → http://localhost:8000
 ```
 
