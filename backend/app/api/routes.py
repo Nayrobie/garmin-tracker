@@ -22,9 +22,11 @@ from app.models.workout import (
     RaceRead,
     RaceUpdate,
     WeeklySchedule,
+    WeeklyStats,
 )
 from app.services.body_composition_service import BodyCompositionRecord, load_body_composition
 from app.services.garmin_service import sync_garmin_activities
+from app.config import TRAINING_RULES
 
 router = APIRouter(prefix="/api")
 
@@ -247,19 +249,30 @@ def delete_workout_group(group_id: str, db: Session = Depends(get_db)) -> None:
 
 
 @router.post("/garmin/sync", status_code=200)
-def trigger_garmin_sync(db: Session = Depends(get_db)) -> dict:
+def trigger_garmin_sync(
+    all_time: bool = False,
+    days_back: Optional[int] = None,
+    db: Session = Depends(get_db),
+) -> dict:
     """Manually trigger a Garmin activity sync.
 
-    Pulls recent activities from Garmin Connect and upserts them into
+    Pulls activities from Garmin Connect and upserts them into
     the actual_workouts table.
 
+    Sync range:
+    - ``all_time=true``: fetch entire Garmin history.
+    - ``days_back=N``: fetch last N days.
+    - Default: incremental sync from last sync date to today.
+
     Args:
+        all_time: If true, pull all historical activities.
+        days_back: Explicit lookback in days (overrides incremental).
         db: Database session.
 
     Returns:
         Dict with sync result summary.
     """
-    result = sync_garmin_activities(db)
+    result = sync_garmin_activities(db, all_time=all_time, days_back=days_back)
     return result
 
 
@@ -289,4 +302,99 @@ def get_body_composition() -> List[BodyCompositionRecord]:
         return load_body_composition()
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Weekly Stats
+# ---------------------------------------------------------------------------
+
+
+@router.get("/stats/weekly", response_model=WeeklyStats)
+def get_weekly_stats(
+    date_str: Optional[str] = None, db: Session = Depends(get_db)
+) -> WeeklyStats:
+    """Return aggregated training stats for the week containing *date_str*.
+
+    Includes volume comparison with previous week and a 10% rule alert.
+
+    Args:
+        date_str: ISO date string (YYYY-MM-DD). Defaults to today.
+        db: Database session.
+
+    Returns:
+        WeeklyStats with aggregated metrics and volume change alert.
+    """
+    target = date.fromisoformat(date_str) if date_str else date.today()
+    week_start = target - timedelta(days=target.weekday())
+    week_end = week_start + timedelta(days=6)
+
+    prev_week_start = week_start - timedelta(days=7)
+    prev_week_end = week_start - timedelta(days=1)
+
+    # Current week data
+    actual_rows = (
+        db.query(ActualWorkoutORM)
+        .filter(ActualWorkoutORM.date >= week_start, ActualWorkoutORM.date <= week_end)
+        .all()
+    )
+    planned_rows = (
+        db.query(PlannedWorkoutORM)
+        .filter(PlannedWorkoutORM.date >= week_start, PlannedWorkoutORM.date <= week_end)
+        .all()
+    )
+
+    # Previous week actual workouts (for volume comparison)
+    prev_actual_rows = (
+        db.query(ActualWorkoutORM)
+        .filter(
+            ActualWorkoutORM.date >= prev_week_start,
+            ActualWorkoutORM.date <= prev_week_end,
+        )
+        .all()
+    )
+
+    # Compute current week aggregates
+    distances = [a.distance_km for a in actual_rows if a.distance_km]
+    total_volume_km = round(sum(distances), 2)
+    long_run_km = round(max(distances), 2) if distances else 0.0
+    run_count = sum(1 for a in actual_rows if a.type.value == "run")
+    total_duration_min = round(
+        sum(a.duration_min for a in actual_rows if a.duration_min), 1
+    )
+
+    hr_values = [a.avg_hr for a in actual_rows if a.avg_hr]
+    avg_hr = round(sum(hr_values) / len(hr_values)) if hr_values else None
+
+    workouts_by_type: dict[str, int] = {}
+    for a in actual_rows:
+        workouts_by_type[a.type.value] = workouts_by_type.get(a.type.value, 0) + 1
+
+    # Previous week volume
+    prev_distances = [a.distance_km for a in prev_actual_rows if a.distance_km]
+    prev_week_volume_km = round(sum(prev_distances), 2) if prev_distances else None
+
+    # Volume change calculation
+    volume_change_pct: Optional[float] = None
+    volume_alert = False
+    if prev_week_volume_km and prev_week_volume_km > 0:
+        volume_change_pct = round(
+            ((total_volume_km - prev_week_volume_km) / prev_week_volume_km) * 100, 1
+        )
+        max_increase = TRAINING_RULES["max_weekly_volume_increase_percent"]
+        volume_alert = volume_change_pct > max_increase
+
+    return WeeklyStats(
+        week_start=week_start,
+        total_volume_km=total_volume_km,
+        run_count=run_count,
+        long_run_km=long_run_km,
+        avg_hr=avg_hr,
+        total_duration_min=total_duration_min,
+        workouts_by_type=workouts_by_type,
+        planned_count=len(planned_rows),
+        actual_count=len(actual_rows),
+        prev_week_volume_km=prev_week_volume_km,
+        volume_change_pct=volume_change_pct,
+        volume_alert=volume_alert,
+    )
 

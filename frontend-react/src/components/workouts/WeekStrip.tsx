@@ -8,7 +8,7 @@
  * - Edit / delete planned workouts via WorkoutCard actions
  * - Manual Garmin sync button
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   DndContext,
   PointerSensor,
@@ -185,7 +185,12 @@ function DayColumn({ day, onAddClick, onEdit, onDelete, onCardClick }: DayColumn
 // WeekStrip
 // ---------------------------------------------------------------------------
 
-export function WeekStrip() {
+interface WeekStripProps {
+  onWeekChange?: (weekStart: Date) => void;
+  onSyncComplete?: () => void;
+}
+
+export function WeekStrip({ onWeekChange, onSyncComplete }: WeekStripProps) {
   const [weekStart, setWeekStart] = useState<Date>(() =>
     startOfWeek(new Date(), { weekStartsOn: 1 }),
   );
@@ -209,24 +214,34 @@ export function WeekStrip() {
     setDetailOpen(true);
   }
 
-  // Load on mount + week change
-  const [initialized, setInitialized] = useState(false);
-  if (!initialized) {
-    setInitialized(true);
+  // Load on mount
+  useEffect(() => {
     load(weekStart);
-  }
+    onWeekChange?.(weekStart);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Week navigation
   function goToPrevWeek() {
     const ws = subWeeks(weekStart, 1);
     setWeekStart(ws);
     load(ws);
+    onWeekChange?.(ws);
   }
   function goToNextWeek() {
     const ws = addWeeks(weekStart, 1);
     setWeekStart(ws);
     load(ws);
+    onWeekChange?.(ws);
   }
+  function goToToday() {
+    const ws = startOfWeek(new Date(), { weekStartsOn: 1 });
+    setWeekStart(ws);
+    load(ws);
+    onWeekChange?.(ws);
+  }
+
+  const isCurrentWeek = format(weekStart, 'yyyy-MM-dd') === format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
 
   // Garmin sync
   async function handleSync() {
@@ -239,6 +254,7 @@ export function WeekStrip() {
       } else {
         setSyncMsg(`Synced ${result.synced} new, ${result.updated} updated.`);
         load(weekStart);
+        onSyncComplete?.();
       }
     } catch {
       setSyncMsg('Sync failed — check backend logs.');
@@ -385,6 +401,14 @@ export function WeekStrip() {
           >
             <ChevronRight size={16} />
           </button>
+          {!isCurrentWeek && (
+            <button
+              onClick={goToToday}
+              className="ml-1 px-2 py-1 rounded-lg text-[11px] font-medium text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 transition-colors"
+            >
+              Today
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

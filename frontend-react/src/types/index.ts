@@ -90,3 +90,22 @@ export interface BodyCompositionRecord {
   health_score: number | null;
   metabolic_age: number | null;
 }
+
+// ---------------------------------------------------------------------------
+// Weekly Stats
+// ---------------------------------------------------------------------------
+
+export interface WeeklyStats {
+  week_start: string;
+  total_volume_km: number;
+  run_count: number;
+  long_run_km: number;
+  avg_hr: number | null;
+  total_duration_min: number;
+  workouts_by_type: Record<string, number>;
+  planned_count: number;
+  actual_count: number;
+  prev_week_volume_km: number | null;
+  volume_change_pct: number | null;
+  volume_alert: boolean;
+}

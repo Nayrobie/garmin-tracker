@@ -51,8 +51,13 @@ export const scheduleApi = {
     request<void>(`/schedule/workout/group/${groupId}`, { method: 'DELETE' }),
 
   /** Trigger a manual Garmin sync. Returns { synced, updated, error }. */
-  triggerSync: (): Promise<{ synced: number; updated: number; error: string | null }> =>
-    request('/garmin/sync', { method: 'POST' }),
+  triggerSync: (opts?: { allTime?: boolean; daysBack?: number }): Promise<{ synced: number; updated: number; error: string | null }> => {
+    const params = new URLSearchParams();
+    if (opts?.allTime) params.set('all_time', 'true');
+    if (opts?.daysBack != null) params.set('days_back', String(opts.daysBack));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return request(`/garmin/sync${qs}`, { method: 'POST' });
+  },
 
   getSyncStatus: (): Promise<{ last_sync: string | null }> =>
     request('/garmin/sync/status'),

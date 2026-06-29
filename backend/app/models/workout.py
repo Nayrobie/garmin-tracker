@@ -246,3 +246,25 @@ class WeeklySchedule(BaseModel):
     days: List[DaySchedule]
     last_sync: Optional[datetime]
 
+
+# ---------------------------------------------------------------------------
+# Pydantic schemas — Weekly Stats
+# ---------------------------------------------------------------------------
+
+
+class WeeklyStats(BaseModel):
+    """Aggregated training stats for a single week."""
+
+    week_start: DateType
+    total_volume_km: float
+    run_count: int
+    long_run_km: float
+    avg_hr: Optional[int]
+    total_duration_min: float
+    workouts_by_type: dict[str, int]
+    planned_count: int
+    actual_count: int
+    prev_week_volume_km: Optional[float]
+    volume_change_pct: Optional[float]
+    volume_alert: bool
+

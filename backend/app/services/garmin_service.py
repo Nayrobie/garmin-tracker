@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session
 from app.config import GARMIN_EMAIL, GARMIN_PASSWORD
 from app.models.workout import ActualWorkoutORM, GarminSyncStateORM, WorkoutType
 
+logger = logging.getLogger(__name__)
+
 # Activity type keys that should never be imported into the calendar
 _BLACKLISTED_TYPES: frozenset[str] = frozenset({
     "stop_watch",
@@ -149,12 +151,21 @@ def _upsert_activity(db: Session, activity: dict[str, Any]) -> bool:
         return True
 
 
-def sync_garmin_activities(db: Session, days_back: int = 7) -> dict:
-    """Pull recent activities from Garmin Connect and upsert into the DB.
+def sync_garmin_activities(
+    db: Session, *, all_time: bool = False, days_back: int | None = None
+) -> dict:
+    """Pull activities from Garmin Connect and upsert into the DB.
+
+    Sync range logic:
+    - ``all_time=True``: fetch from 2015-01-01 to today (full history).
+    - ``days_back`` specified: fetch that many days back.
+    - Otherwise (default): fetch from last sync date to today (incremental).
+      Falls back to 30 days if no previous sync exists.
 
     Args:
         db: Active database session.
-        days_back: How many days of history to fetch (default: 7).
+        all_time: If True, pull all historical activities.
+        days_back: Explicit number of days to look back (overrides incremental).
 
     Returns:
         Dict summarising the sync result:
@@ -177,23 +188,38 @@ def sync_garmin_activities(db: Session, days_back: int = 7) -> dict:
             "error": "garminconnect package not installed. Run: pip install garminconnect",
         }
 
+    # Determine date range
+    end_date = date.today()
+    if all_time:
+        start_date = date(2015, 1, 1)
+    elif days_back is not None:
+        start_date = end_date - timedelta(days=days_back)
+    else:
+        # Incremental: from last sync date (with 1-day overlap for safety)
+        sync_state = db.get(GarminSyncStateORM, 1)
+        if sync_state and sync_state.last_sync_at:
+            start_date = sync_state.last_sync_at.date() - timedelta(days=1)
+        else:
+            start_date = end_date - timedelta(days=30)
+
     try:
         client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
         client.login()
-    except Exception as exc:
-        logger.exception("Garmin login failed")
-        return {"synced": 0, "updated": 0, "error": f"Login failed: {exc}"}
 
-    start_date = date.today() - timedelta(days=days_back)
-    end_date = date.today()
-
-    try:
         activities: list[dict] = client.get_activities_by_date(
             start_date.isoformat(), end_date.isoformat()
         )
     except Exception as exc:
-        logger.exception("Failed to fetch Garmin activities")
-        return {"synced": 0, "updated": 0, "error": f"Fetch failed: {exc}"}
+        err_msg = str(exc)
+        if "429" in err_msg or "rate" in err_msg.lower():
+            logger.warning("Garmin rate-limited: %s", err_msg)
+            return {
+                "synced": 0,
+                "updated": 0,
+                "error": "Garmin rate-limited — wait a few minutes and try again.",
+            }
+        logger.exception("Garmin sync failed during login/fetch")
+        return {"synced": 0, "updated": 0, "error": f"Sync failed: {exc}"}
 
     inserted = 0
     updated = 0
