@@ -41,6 +41,10 @@ logs/
 .ipynb_checkpoints/
 notebooks/
 
+# Databases
+*.db
+*.sqlite
+
 # Copilot
 copilot-instructions.md
 

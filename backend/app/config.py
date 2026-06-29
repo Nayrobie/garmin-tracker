@@ -29,15 +29,16 @@ GOOGLE_SHEETS_API_KEY = os.getenv("GOOGLE_SHEETS_API_KEY")
 GOOGLE_SHEETS_SPREADSHEET_ID = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID")
 
 # User physiological profile (for context in analysis)
+# Values are loaded from environment variables to keep personal data out of version control.
 USER_PROFILE = {
-    "age": 26,
-    "weight_kg": 59,
-    "vo2_max": 45,
-    "lactate_threshold_bpm": 186,
-    "lactate_threshold_pace": "5:30",  # min/km
-    "lactate_threshold_power": 256,  # watts
-    "vma": 12,  # km/h (Vitesse Maximale Aérobie)
-    "training_goal": "Lower heart rate while maintaining pace; semi-marathon readiness",
+    "age": int(os.getenv("USER_AGE", "0")) or None,
+    "weight_kg": float(os.getenv("USER_WEIGHT_KG", "0")) or None,
+    "vo2_max": float(os.getenv("USER_VO2_MAX", "0")) or None,
+    "lactate_threshold_bpm": int(os.getenv("USER_LT_BPM", "0")) or None,
+    "lactate_threshold_pace": os.getenv("USER_LT_PACE"),  # min/km
+    "lactate_threshold_power": int(os.getenv("USER_LT_POWER", "0")) or None,  # watts
+    "vma": float(os.getenv("USER_VMA", "0")) or None,  # km/h (Vitesse Maximale Aérobie)
+    "training_goal": os.getenv("USER_TRAINING_GOAL", ""),
 }
 
 # Training constraints

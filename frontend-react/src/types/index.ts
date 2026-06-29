@@ -68,3 +68,25 @@ export interface WeeklySchedule {
   days: DaySchedule[];
   last_sync: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Body Composition (Feelfit import)
+// ---------------------------------------------------------------------------
+
+export interface BodyCompositionRecord {
+  measured_at: string; // ISO datetime string
+  weight_kg: number;
+  body_fat_pct: number | null;
+  bmi: number | null;
+  skeletal_muscle_pct: number | null;
+  muscle_mass_kg: number | null;
+  protein_pct: number | null;
+  bmr_kcal: number | null;
+  fat_free_weight_kg: number | null;
+  subcutaneous_fat_pct: number | null;
+  visceral_fat: number | null;
+  body_water_pct: number | null;
+  bone_mass_kg: number | null;
+  health_score: number | null;
+  metabolic_age: number | null;
+}

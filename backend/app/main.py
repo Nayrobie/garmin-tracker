@@ -17,6 +17,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:8501",  # Streamlit
         "http://localhost:5173",  # React (Vite)
+        "http://localhost:5174",  # React (Vite alt port)
         "http://localhost:3000",
     ],
     allow_credentials=True,

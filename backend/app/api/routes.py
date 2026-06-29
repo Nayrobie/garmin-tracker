@@ -23,6 +23,7 @@ from app.models.workout import (
     RaceUpdate,
     WeeklySchedule,
 )
+from app.services.body_composition_service import BodyCompositionRecord, load_body_composition
 from app.services.garmin_service import sync_garmin_activities
 
 router = APIRouter(prefix="/api")
@@ -267,4 +268,25 @@ def get_sync_status(db: Session = Depends(get_db)) -> dict:
     """Return the last Garmin sync timestamp."""
     sync_state = db.get(GarminSyncStateORM, 1)
     return {"last_sync": sync_state.last_sync_at if sync_state else None}
+
+
+# ---------------------------------------------------------------------------
+# Body composition (Feelfit import)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/body-composition", response_model=List[BodyCompositionRecord])
+def get_body_composition() -> List[BodyCompositionRecord]:
+    """Return all body composition records from the Feelfit CSV export.
+
+    Returns:
+        List of records sorted oldest to newest.
+
+    Raises:
+        HTTPException: 503 if the data file is missing.
+    """
+    try:
+        return load_body_composition()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
