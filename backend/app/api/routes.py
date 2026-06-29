@@ -22,6 +22,8 @@ from app.models.workout import (
     RaceCreate,
     RaceRead,
     RaceUpdate,
+    SleepRecordORM,
+    SleepRecordRead,
     WeeklySchedule,
     WeeklyStats,
     RunningPeriodStats,
@@ -588,3 +590,63 @@ def adjust_plan(
     """
     return adjust_plan_from_progress(db=db, weeks_ahead=weeks_ahead)
 
+
+# ---------------------------------------------------------------------------
+# Sleep
+# ---------------------------------------------------------------------------
+
+
+@router.get("/sleep", response_model=List[SleepRecordRead])
+def get_sleep_records(
+    days: int = 30,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    db: Session = Depends(get_db),
+) -> list:
+    """Return sleep records, newest first.
+
+    Supports either a rolling window (days) or an explicit date range
+    (start/end in YYYY-MM-DD format). If start/end are provided they
+    take precedence over days.
+
+    Args:
+        days: Number of days to return (default 30, ignored if start/end given).
+        start: Start date (inclusive), YYYY-MM-DD.
+        end: End date (inclusive), YYYY-MM-DD.
+        db: Database session.
+
+    Returns:
+        List of sleep records ordered by date descending.
+    """
+    if start and end:
+        start_date = date.fromisoformat(start)
+        end_date = date.fromisoformat(end)
+    else:
+        end_date = date.today()
+        start_date = end_date - timedelta(days=days)
+
+    records = (
+        db.query(SleepRecordORM)
+        .filter(SleepRecordORM.date >= start_date, SleepRecordORM.date <= end_date)
+        .order_by(SleepRecordORM.date.desc())
+        .all()
+    )
+    return [SleepRecordRead.model_validate(r) for r in records]
+
+
+@router.post("/sleep/sync", status_code=200)
+def trigger_sleep_sync(
+    days_back: int = 30, db: Session = Depends(get_db)
+) -> dict:
+    """Trigger a Garmin sleep data sync.
+
+    Args:
+        days_back: Number of days to sync.
+        db: Database session.
+
+    Returns:
+        Sync result summary.
+    """
+    from app.services.garmin_service import sync_garmin_sleep
+
+    return sync_garmin_sleep(db, days_back=days_back)

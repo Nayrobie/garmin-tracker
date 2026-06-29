@@ -171,6 +171,51 @@ class GarminSyncStateORM(Base):
 
 
 # ---------------------------------------------------------------------------
+# Sleep ORM model (Garmin-synced)
+# ---------------------------------------------------------------------------
+
+
+class SleepRecordORM(Base):
+    """Garmin sleep data for a single night."""
+
+    __tablename__ = "sleep_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date: Mapped[DateType] = mapped_column(Date, nullable=False, unique=True, index=True)
+    total_sleep_min: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    deep_sleep_min: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    light_sleep_min: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    rem_sleep_min: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    awake_min: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    sleep_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    start_time: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    end_time: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Pydantic schemas — Sleep
+# ---------------------------------------------------------------------------
+
+
+class SleepRecordRead(BaseModel):
+    """Sleep record response schema."""
+
+    id: int
+    date: DateType
+    total_sleep_min: Optional[int] = None
+    deep_sleep_min: Optional[int] = None
+    light_sleep_min: Optional[int] = None
+    rem_sleep_min: Optional[int] = None
+    awake_min: Optional[int] = None
+    sleep_score: Optional[int] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
 # Pydantic schemas — PlannedWorkout
 # ---------------------------------------------------------------------------
 

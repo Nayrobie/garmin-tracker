@@ -158,3 +158,20 @@ export interface TrainingPlanResponse {
   starting_volume_km: number;
   weeks: TrainingPlanWeek[];
 }
+
+// ---------------------------------------------------------------------------
+// Sleep
+// ---------------------------------------------------------------------------
+
+export interface SleepRecord {
+  id: number;
+  date: string;
+  total_sleep_min: number | null;
+  deep_sleep_min: number | null;
+  light_sleep_min: number | null;
+  rem_sleep_min: number | null;
+  awake_min: number | null;
+  sleep_score: number | null;
+  start_time: string | null;
+  end_time: string | null;
+}

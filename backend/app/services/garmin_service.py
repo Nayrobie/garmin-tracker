@@ -15,7 +15,13 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.config import GARMIN_EMAIL, GARMIN_PASSWORD
-from app.models.workout import ActualWorkoutORM, GarminSyncStateORM, PlannedWorkoutORM, WorkoutType
+from app.models.workout import (
+    ActualWorkoutORM,
+    GarminSyncStateORM,
+    PlannedWorkoutORM,
+    SleepRecordORM,
+    WorkoutType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -331,3 +337,129 @@ def _auto_match_workouts(db: Session) -> None:
         actual.planned_workout_id = planned.id
 
     db.commit()
+
+
+def sync_garmin_sleep(
+    db: Session, *, days_back: int = 30
+) -> dict:
+    """Pull sleep data from Garmin Connect and upsert into the DB.
+
+    Args:
+        db: Active database session.
+        days_back: Number of days of sleep data to fetch.
+
+    Returns:
+        Dict summarising the sync result.
+    """
+    if not GARMIN_EMAIL or not GARMIN_PASSWORD:
+        return {
+            "synced": 0,
+            "error": "Garmin credentials not configured.",
+        }
+
+    try:
+        from garminconnect import Garmin  # type: ignore[import]
+    except ImportError:
+        return {
+            "synced": 0,
+            "error": "garminconnect package not installed.",
+        }
+
+    try:
+        client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
+        client.login()
+    except Exception as exc:
+        logger.exception("Garmin sleep sync login failed")
+        return {"synced": 0, "error": f"Login failed: {exc}"}
+
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days_back)
+    inserted = 0
+
+    current = start_date
+    while current <= end_date:
+        try:
+            sleep_data = client.get_sleep_data(current.isoformat())
+        except Exception:
+            current += timedelta(days=1)
+            continue
+
+        if not sleep_data:
+            current += timedelta(days=1)
+            continue
+
+        # Extract sleep summary
+        daily_summary = sleep_data.get("dailySleepDTO", {})
+        if not daily_summary:
+            current += timedelta(days=1)
+            continue
+
+        sleep_date_str = daily_summary.get("calendarDate")
+        if not sleep_date_str:
+            current += timedelta(days=1)
+            continue
+
+        try:
+            sleep_date = date.fromisoformat(sleep_date_str)
+        except (ValueError, TypeError):
+            sleep_date = current
+
+        total_sec = daily_summary.get("sleepTimeSeconds") or 0
+        deep_sec = daily_summary.get("deepSleepSeconds") or 0
+        light_sec = daily_summary.get("lightSleepSeconds") or 0
+        rem_sec = daily_summary.get("remSleepSeconds") or 0
+        awake_sec = daily_summary.get("awakeSleepSeconds") or 0
+
+        # Sleep score from dailySleepDTO.sleepScores.overall.value
+        sleep_scores = daily_summary.get("sleepScores", {})
+        overall = sleep_scores.get("overall", {}) if sleep_scores else {}
+        score = overall.get("value") if overall else None
+
+        # Start/end times
+        start_ts = daily_summary.get("sleepStartTimestampLocal")
+        end_ts = daily_summary.get("sleepEndTimestampLocal")
+        start_time_str = None
+        end_time_str = None
+        if start_ts:
+            try:
+                start_time_str = datetime.fromtimestamp(start_ts / 1000).strftime("%H:%M")
+            except (ValueError, OSError):
+                pass
+        if end_ts:
+            try:
+                end_time_str = datetime.fromtimestamp(end_ts / 1000).strftime("%H:%M")
+            except (ValueError, OSError):
+                pass
+
+        # Upsert
+        existing = (
+            db.query(SleepRecordORM)
+            .filter(SleepRecordORM.date == sleep_date)
+            .first()
+        )
+
+        fields = {
+            "total_sleep_min": total_sec // 60 if total_sec else None,
+            "deep_sleep_min": deep_sec // 60 if deep_sec else None,
+            "light_sleep_min": light_sec // 60 if light_sec else None,
+            "rem_sleep_min": rem_sec // 60 if rem_sec else None,
+            "awake_min": awake_sec // 60 if awake_sec else None,
+            "sleep_score": score,
+            "start_time": start_time_str,
+            "end_time": end_time_str,
+            "synced_at": datetime.utcnow(),
+        }
+
+        if existing:
+            for k, v in fields.items():
+                setattr(existing, k, v)
+        else:
+            row = SleepRecordORM(date=sleep_date, **fields)
+            db.add(row)
+            inserted += 1
+
+        current += timedelta(days=1)
+
+    db.commit()
+    logger.info("Sleep sync complete: %d new records.", inserted)
+    return {"synced": inserted, "error": None}

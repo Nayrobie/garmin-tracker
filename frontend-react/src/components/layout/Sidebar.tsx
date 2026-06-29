@@ -16,7 +16,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { to: '/', icon: <Calendar size={20} />, label: 'Calendar' },
   { to: '/health', icon: <Heart size={20} />, label: 'Health'},
-  { to: '/cycle', icon: <Moon size={20} />, label: 'Cycle', disabled: true },
+  { to: '/cycle', icon: <Moon size={20} />, label: 'Cycle' },
   { to: '/settings', icon: <Settings size={20} />, label: 'Settings' },
 ];
 
