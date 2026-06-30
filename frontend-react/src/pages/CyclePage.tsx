@@ -34,18 +34,29 @@ function formatHoursMin(min: number | null): string {
   return h > 0 ? `${h}h${m > 0 ? String(m).padStart(2, '0') : ''}` : `${m}min`;
 }
 
+/** Tiny inline sparkline SVG from an array of numbers. */
+function Sparkline({ data, color = '#9ca3af', width = 48, height = 16 }: { data: number[]; color?: string; width?: number; height?: number }) {
+  if (data.length < 2) return null;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const points = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * width;
+    const y = height - ((v - min) / range) * (height - 2) - 1;
+    return `${x},${y}`;
+  }).join(' ');
+  return (
+    <svg width={width} height={height} className="inline-block ml-1.5 opacity-60">
+      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function scoreColor(score: number | null): string {
   if (score == null) return 'text-gray-400';
   if (score >= 80) return 'text-green-600';
   if (score >= 60) return 'text-yellow-600';
   return 'text-red-500';
-}
-
-function scoreBg(score: number | null): string {
-  if (score == null) return 'bg-gray-100';
-  if (score >= 80) return 'bg-green-50';
-  if (score >= 60) return 'bg-yellow-50';
-  return 'bg-red-50';
 }
 
 const PHASE_COLORS: Record<string, string> = {
@@ -345,10 +356,6 @@ export function CyclePage() {
     const ws = records.filter((r) => r.sleep_score != null);
     return ws.length ? Math.round(ws.reduce((s, r) => s + (r.sleep_score ?? 0), 0) / ws.length) : null;
   })();
-  const avgHrv = (() => {
-    const wh = records.filter((r) => r.hrv_overnight != null);
-    return wh.length ? Math.round(wh.reduce((s, r) => s + (r.hrv_overnight ?? 0), 0) / wh.length) : null;
-  })();
   const avgRhr = (() => {
     const wr = records.filter((r) => r.resting_hr != null);
     return wr.length ? Math.round(wr.reduce((s, r) => s + (r.resting_hr ?? 0), 0) / wr.length) : null;
@@ -362,6 +369,12 @@ export function CyclePage() {
     return vals.length ? Math.max(...vals) : null;
   })();
 
+  // Sparkline data (last 7 days, oldest first)
+  const last7 = records.slice(0, 7).reverse();
+  const sparkScore = last7.map((r) => r.sleep_score).filter((v): v is number => v != null);
+  const sparkRhr = last7.map((r) => r.resting_hr).filter((v): v is number => v != null);
+  const sparkSleep = last7.map((r) => r.total_sleep_min).filter((v): v is number => v != null);
+
   const hasCycleData = cycles.length > 0;
 
   // Current cycle computation
@@ -373,10 +386,16 @@ export function CyclePage() {
     const current = sorted.find((c) => parseISO(c.start_date) <= today);
     if (!current) return null;
     const cycleStart = parseISO(current.start_date);
-    const dayNum = differenceInDays(today, cycleStart) + 1;
+    let dayNum = differenceInDays(today, cycleStart) + 1;
     const cycleLen = current.cycle_length ?? 28;
+    // Wrap day if it exceeds cycle length (gap between tracked cycles)
+    if (dayNum > cycleLen) {
+      dayNum = ((dayNum - 1) % cycleLen) + 1;
+    }
     const periodLen = current.period_length ?? 5;
-    const fertileStart = current.fertile_window_start_day ?? 12;
+    // Clamp fertileStart to reasonable range (max cycle day 18 if value seems wrong)
+    const rawFertileStart = current.fertile_window_start_day ?? 12;
+    const fertileStart = rawFertileStart > cycleLen ? 12 : rawFertileStart;
     const fertileLen = current.fertile_window_length ?? 5;
 
     // Determine current phase
@@ -446,25 +465,21 @@ export function CyclePage() {
       </div>
 
       {/* Summary strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <Card padding="sm" className="text-center">
           <p className="text-[9px] uppercase text-gray-400 tracking-wider mb-0.5">Avg Sleep</p>
-          <p className="text-base font-semibold text-gray-800">{formatHoursMin(avgTotal)}</p>
-        </Card>
-        <Card padding="sm" className={`text-center ${scoreBg(avgScore)}`}>
-          <p className="text-[9px] uppercase text-gray-400 tracking-wider mb-0.5">Score</p>
-          <p className={`text-base font-semibold ${scoreColor(avgScore)}`}>{avgScore ?? '—'}</p>
+          <p className="text-base font-semibold text-gray-800">{formatHoursMin(avgTotal)}<Sparkline data={sparkSleep} color="#6366f1" /></p>
         </Card>
         <Card padding="sm" className="text-center">
-          <p className="text-[9px] uppercase text-gray-400 tracking-wider mb-0.5">HRV</p>
-          <p className="text-base font-semibold text-emerald-600">{avgHrv ?? '—'}<span className="text-[10px] text-gray-400 ml-0.5">ms</span></p>
+          <p className="text-[9px] uppercase text-gray-400 tracking-wider mb-0.5">Sleep Score</p>
+          <p className={`text-base font-semibold ${scoreColor(avgScore)}`}>{avgScore ?? '—'}<Sparkline data={sparkScore} color="#14b8a6" /></p>
         </Card>
         <Card padding="sm" className="text-center">
           <p className="text-[9px] uppercase text-gray-400 tracking-wider mb-0.5">Resting HR</p>
-          <p className="text-base font-semibold text-amber-600">{avgRhr ?? '—'}<span className="text-[10px] text-gray-400 ml-0.5">bpm</span></p>
+          <p className="text-base font-semibold text-rose-600">{avgRhr ?? '—'}<span className="text-[10px] text-gray-400 ml-0.5">bpm</span><Sparkline data={sparkRhr} color="#f43f5e" /></p>
         </Card>
         <Card padding="sm" className="text-center">
-          <p className="text-[9px] uppercase text-gray-400 tracking-wider mb-0.5">Nights</p>
+          <p className="text-[9px] uppercase text-gray-400 tracking-wider mb-0.5">Total Nights</p>
           <p className="text-base font-semibold text-gray-800">{validRecords.length}</p>
         </Card>
       </div>
@@ -649,7 +664,7 @@ export function CyclePage() {
                 </thead>
                 <tbody>
                   {records.map((r) => (
-                    <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                    <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50/80 transition-colors">
                       <td className="py-1.5 pr-3 text-gray-700 whitespace-nowrap">{format(parseISO(r.date), 'EEE d')}</td>
                       <td className="py-1.5 pr-3 text-gray-400 whitespace-nowrap">
                         {r.start_time && r.end_time ? `${r.start_time}–${r.end_time}` : '—'}

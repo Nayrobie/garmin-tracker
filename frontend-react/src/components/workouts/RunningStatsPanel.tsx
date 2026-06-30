@@ -8,6 +8,7 @@ import { Trophy, Activity, TrendingUp } from 'lucide-react';
 
 import type { RunningStats } from '../../types';
 import { statsApi } from '../../api/stats';
+import { Card } from '../ui/Card';
 
 type Granularity = 'yearly' | 'monthly';
 
@@ -29,10 +30,10 @@ export function RunningStatsPanel() {
 
   if (loading && !stats) {
     return (
-      <div className="rounded-2xl border border-white/40 bg-white/40 backdrop-blur-sm p-6 animate-pulse">
+      <Card className="animate-pulse">
         <div className="h-6 w-48 bg-gray-200 rounded mb-4" />
         <div className="h-40 bg-gray-100 rounded" />
-      </div>
+      </Card>
     );
   }
   if (error) {
@@ -54,7 +55,7 @@ export function RunningStatsPanel() {
   }));
 
   return (
-    <div className="rounded-2xl border border-white/40 bg-white/40 backdrop-blur-sm p-5 space-y-5">
+    <Card className="space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -130,7 +131,7 @@ export function RunningStatsPanel() {
       {/* Bottom row: PRs + Total activities */}
       <div className="flex gap-3 flex-wrap">
         {/* Personal Records */}
-        <div className="flex-1 min-w-[200px] rounded-xl border border-white/40 bg-white/30 p-3">
+        <div className="flex-1 min-w-[200px] rounded-[var(--radius-card)] border border-white/60 bg-white/70 p-3">
           <div className="flex items-center gap-1.5 mb-2">
             <Trophy size={13} className="text-amber-500" />
             <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">
@@ -154,7 +155,7 @@ export function RunningStatsPanel() {
         </div>
 
         {/* Total activities */}
-        <div className="rounded-xl border border-white/40 bg-white/30 p-3 flex items-center gap-3">
+        <div className="rounded-[var(--radius-card)] border border-white/60 bg-white/70 p-3 flex items-center gap-3">
           <Activity size={20} className="text-[var(--color-accent)]" />
           <div>
             <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">
@@ -164,6 +165,6 @@ export function RunningStatsPanel() {
           </div>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }

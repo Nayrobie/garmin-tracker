@@ -10,6 +10,7 @@ import { AlertTriangle, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 import type { WeeklyStats } from '../../types';
 import { statsApi } from '../../api/stats';
+import { Card } from '../ui/Card';
 
 interface WeeklyStatsBarProps {
   weekStart: Date | null;
@@ -122,12 +123,11 @@ interface StatCardProps {
 
 function StatCard({ label, value, sub, alert, alertTooltip }: StatCardProps) {
   return (
-    <div
+    <Card
+      padding="sm"
       className={[
-        'flex-1 min-w-[100px] rounded-xl border px-3 py-2 relative',
-        alert
-          ? 'border-red-200 bg-red-50/60'
-          : 'border-white/40 bg-white/40 backdrop-blur-sm',
+        'flex-1 min-w-[100px] relative',
+        alert ? '!border-red-200 !bg-red-50/60' : '',
       ].join(' ')}
       title={alert ? alertTooltip : undefined}
     >
@@ -137,6 +137,6 @@ function StatCard({ label, value, sub, alert, alertTooltip }: StatCardProps) {
       <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">{label}</p>
       <p className="text-lg font-semibold text-gray-900 leading-tight mt-0.5">{value}</p>
       {sub && <div className="text-[11px] text-gray-500 mt-0.5">{sub}</div>}
-    </div>
+    </Card>
   );
 }

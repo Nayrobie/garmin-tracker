@@ -25,8 +25,8 @@
   --radius-card: 1.25rem;    /* 20px — Apple's preferred corner radius */
   --radius-btn: 0.75rem;
 
-  --shadow-glass: 0 8px 32px oklch(0 0 0 / 0.08), 0 2px 8px oklch(0 0 0 / 0.04);
-  --shadow-card: 0 4px 16px oklch(0 0 0 / 0.06);
+  --shadow-glass: none;
+  --shadow-card: none;
 }
 
 * {

@@ -47,7 +47,6 @@ export function Modal({ open, onClose, title, children, maxWidth = 'max-w-lg' }:
                 'backdrop-blur-2xl',
                 'rounded-[var(--radius-card)]',
                 'border border-white/50',
-                'shadow-[var(--shadow-glass)]',
                 'overflow-hidden',
               ].join(' ')}
               initial={{ opacity: 0, scale: 0.95, y: 8 }}

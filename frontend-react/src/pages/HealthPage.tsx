@@ -79,13 +79,13 @@ function StatCard({ label, value, unit, delta, prevLabel }: {
 }) {
   if (value == null) return null;
   return (
-    <Card>
-      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">{label}</p>
-      <p className="text-2xl font-semibold text-gray-900">
-        {value.toFixed(1)}<span className="text-base font-normal text-gray-500 ml-1">{unit}</span>
+    <Card padding="sm">
+      <p className="text-[9px] uppercase text-gray-400 tracking-wider mb-0.5">{label}</p>
+      <p className="text-base font-semibold text-gray-900">
+        {value.toFixed(1)}<span className="text-[10px] font-normal text-gray-400 ml-0.5">{unit}</span>
       </p>
       {delta != null && prevLabel && (
-        <p className={`text-xs mt-1 font-medium ${delta > 0 ? 'text-red-500' : delta < 0 ? 'text-green-600' : 'text-gray-400'}`}>
+        <p className={`text-[10px] mt-0.5 font-medium ${delta > 0 ? 'text-red-500' : delta < 0 ? 'text-emerald-500' : 'text-gray-400'}`}>
           {delta > 0 ? '▲' : delta < 0 ? '▼' : '–'} {Math.abs(delta).toFixed(1)}{unit ? ` ${unit}` : ''} vs {prevLabel}
         </p>
       )}

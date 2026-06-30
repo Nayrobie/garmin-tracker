@@ -21,15 +21,14 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
       ref={ref}
       className={[
         'rounded-[var(--radius-card)]',
-        'bg-white/50',
+        'bg-white/70',
         'border border-white/60',
-        'shadow-[var(--shadow-glass)]',
         paddingMap[padding],
         className,
       ]
         .filter(Boolean)
         .join(' ')}
-      style={{ backdropFilter: 'blur(24px) saturate(1.8)', ...style }}
+      style={style}
       {...props}
     >
       {children}

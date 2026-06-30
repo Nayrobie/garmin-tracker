@@ -4,7 +4,6 @@ from datetime import date, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -12,8 +11,6 @@ from app.models.workout import (
     ActualWorkoutRead,
     DaySchedule,
     GarminSyncStateORM,
-    MenstrualCycleORM,
-    MenstrualCycleRead,
     PlannedWorkoutCreate,
     PlannedWorkoutORM,
     PlannedWorkoutRead,
@@ -24,8 +21,6 @@ from app.models.workout import (
     RaceCreate,
     RaceRead,
     RaceUpdate,
-    SleepRecordORM,
-    SleepRecordRead,
     WeeklySchedule,
     WeeklyStats,
     RunningPeriodStats,
@@ -35,7 +30,6 @@ from app.models.workout import (
 )
 from app.services.body_composition_service import BodyCompositionRecord, load_body_composition
 from app.services.garmin_service import sync_garmin_activities
-from app.services.training_plan_service import adjust_plan_from_progress, generate_training_plan
 from app.config import TRAINING_RULES
 
 router = APIRouter(prefix="/api")
@@ -536,178 +530,3 @@ def get_running_stats(
         total_activities=total_activities,
     )
 
-
-# ---------------------------------------------------------------------------
-# Training Plan Generation
-# ---------------------------------------------------------------------------
-
-
-class GeneratePlanRequest(BaseModel):
-    """Request body for training plan generation."""
-
-    starting_volume_km: float = 12.0
-    weeks_ahead: int = 17
-    start_date: Optional[date] = None
-
-
-@router.post("/schedule/generate-plan", status_code=201)
-def generate_plan(
-    payload: GeneratePlanRequest, db: Session = Depends(get_db)
-) -> dict:
-    """Generate a progressive multi-week training plan.
-
-    Creates planned run workouts following the 10% rule with 3 runs/week.
-
-    Args:
-        payload: Plan generation parameters.
-        db: Database session.
-
-    Returns:
-        Plan summary with weekly breakdown.
-    """
-    return generate_training_plan(
-        db=db,
-        starting_volume_km=payload.starting_volume_km,
-        weeks_ahead=payload.weeks_ahead,
-        start_date=payload.start_date,
-    )
-
-
-@router.post("/schedule/adjust-plan", status_code=201)
-def adjust_plan(
-    weeks_ahead: Optional[int] = None, db: Session = Depends(get_db)
-) -> dict:
-    """Adjust the training plan based on current week's actual progress.
-
-    Uses completed running volume as the new baseline and regenerates
-    future weeks with 10% progression. If weeks_ahead is None, auto-detects
-    based on upcoming races.
-
-    Args:
-        weeks_ahead: Number of future weeks to regenerate.
-        db: Database session.
-
-    Returns:
-        Adjusted plan summary.
-    """
-    return adjust_plan_from_progress(db=db, weeks_ahead=weeks_ahead)
-
-
-# ---------------------------------------------------------------------------
-# Sleep
-# ---------------------------------------------------------------------------
-
-
-@router.get("/sleep", response_model=List[SleepRecordRead])
-def get_sleep_records(
-    days: int = 30,
-    start: Optional[str] = None,
-    end: Optional[str] = None,
-    db: Session = Depends(get_db),
-) -> list:
-    """Return sleep records, newest first.
-
-    Supports either a rolling window (days) or an explicit date range
-    (start/end in YYYY-MM-DD format). If start/end are provided they
-    take precedence over days.
-
-    Args:
-        days: Number of days to return (default 30, ignored if start/end given).
-        start: Start date (inclusive), YYYY-MM-DD.
-        end: End date (inclusive), YYYY-MM-DD.
-        db: Database session.
-
-    Returns:
-        List of sleep records ordered by date descending.
-    """
-    if start and end:
-        start_date = date.fromisoformat(start)
-        end_date = date.fromisoformat(end)
-    else:
-        end_date = date.today()
-        start_date = end_date - timedelta(days=days)
-
-    records = (
-        db.query(SleepRecordORM)
-        .filter(SleepRecordORM.date >= start_date, SleepRecordORM.date <= end_date)
-        .order_by(SleepRecordORM.date.desc())
-        .all()
-    )
-    return [SleepRecordRead.model_validate(r) for r in records]
-
-
-@router.post("/sleep/sync", status_code=200)
-def trigger_sleep_sync(
-    days_back: int = 30, db: Session = Depends(get_db)
-) -> dict:
-    """Trigger a Garmin sleep data sync.
-
-    Args:
-        days_back: Number of days to sync.
-        db: Database session.
-
-    Returns:
-        Sync result summary.
-    """
-    from app.services.garmin_service import sync_garmin_sleep
-
-    return sync_garmin_sleep(db, days_back=days_back)
-
-
-# ---------------------------------------------------------------------------
-# Menstrual Cycle endpoints
-# ---------------------------------------------------------------------------
-
-
-@router.get("/cycles", response_model=List[MenstrualCycleRead])
-def get_menstrual_cycles(db: Session = Depends(get_db)) -> list:
-    """Return all menstrual cycles ordered by start date descending.
-
-    Args:
-        db: Database session.
-
-    Returns:
-        List of menstrual cycle records.
-    """
-    records = (
-        db.query(MenstrualCycleORM)
-        .order_by(MenstrualCycleORM.start_date.desc())
-        .all()
-    )
-    return [MenstrualCycleRead.model_validate(r) for r in records]
-
-
-@router.post("/cycles/sync", status_code=200)
-def trigger_cycle_sync(
-    days_back: int = 365, db: Session = Depends(get_db)
-) -> dict:
-    """Sync menstrual cycle data from Garmin.
-
-    Args:
-        days_back: How far back to fetch.
-        db: Database session.
-
-    Returns:
-        Sync result summary.
-    """
-    from app.services.garmin_service import sync_menstrual_cycles
-
-    return sync_menstrual_cycles(db, days_back=days_back)
-
-
-@router.post("/sleep/enrich", status_code=200)
-def trigger_sleep_enrichment(
-    days_back: int = 30, db: Session = Depends(get_db)
-) -> dict:
-    """Enrich sleep records with HRV data and menstrual cycle day/phase.
-
-    Args:
-        days_back: How many days to enrich.
-        db: Database session.
-
-    Returns:
-        Enrichment result summary.
-    """
-    from app.services.garmin_service import sync_hrv_and_cycle_day
-
-    return sync_hrv_and_cycle_day(db, days_back=days_back)

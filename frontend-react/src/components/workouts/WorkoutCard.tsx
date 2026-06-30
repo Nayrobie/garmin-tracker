@@ -68,7 +68,7 @@ export function WorkoutCard({ planned, actual, onEdit, onDelete, onClick }: Work
       style={style}
       className={[
         'group relative rounded-xl border overflow-hidden',
-        'backdrop-blur-sm shadow-sm',
+        'backdrop-blur-none shadow-sm',
         'cursor-grab active:cursor-grabbing select-none',
         cardBorder,
         cardBg,
@@ -82,28 +82,27 @@ export function WorkoutCard({ planned, actual, onEdit, onDelete, onClick }: Work
       <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl ${accentBar}`} />
 
       <div className="pl-4 pr-3 py-2">
-        {/* Icon + label + actions */}
-        <div className="flex items-center justify-between mb-1.5">
-          <div className="flex items-center gap-1.5">
+        {/* Icon + label */}
+        <div className="flex items-center gap-1.5 mb-1.5">
             <span className={`[&>svg]:w-4 [&>svg]:h-4 ${isCompleted ? 'text-green-600' : 'text-gray-400'}`}>{typeIcon[planned.type]}</span>
             <span className={`text-[13px] font-semibold leading-tight ${isCompleted ? 'text-green-800' : 'text-gray-700'}`}>{typeLabel[planned.type]}</span>
             {isCompleted && <span className="text-[10px] text-green-600">✓</span>}
-          </div>
-          <div
-            className="hidden group-hover:flex items-center gap-0.5"
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <button onClick={(e) => { e.stopPropagation(); onEdit(planned); }}
-              className="p-1 rounded-md hover:bg-black/10 text-current opacity-60 hover:opacity-100 transition-opacity"
-              aria-label="Edit">
-              <Pencil size={11} />
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); onDelete(planned.id); }}
-              className="p-1 rounded-md hover:bg-red-100 text-current opacity-60 hover:opacity-100 text-red-500 transition-opacity"
-              aria-label="Delete">
-              <Trash2 size={11} />
-            </button>
-          </div>
+        </div>
+        {/* Hover actions (absolutely positioned) */}
+        <div
+          className="absolute top-1.5 right-1.5 hidden group-hover:flex items-center gap-0.5 bg-white/90 rounded-md shadow-sm border border-gray-100 px-0.5 py-0.5"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <button onClick={(e) => { e.stopPropagation(); onEdit(planned); }}
+            className="p-1 rounded-md hover:bg-black/10 text-current opacity-60 hover:opacity-100 transition-opacity"
+            aria-label="Edit">
+            <Pencil size={11} />
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); onDelete(planned.id); }}
+            className="p-1 rounded-md hover:bg-red-100 text-current opacity-60 hover:opacity-100 text-red-500 transition-opacity"
+            aria-label="Delete">
+            <Trash2 size={11} />
+          </button>
         </div>
 
         {/* Planned chips */}

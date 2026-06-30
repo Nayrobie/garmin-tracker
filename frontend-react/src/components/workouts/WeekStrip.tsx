@@ -98,10 +98,10 @@ function DayColumn({ day, onAddClick, onEdit, onDelete, onCardClick }: DayColumn
       ref={setNodeRef}
       className={[
         'flex flex-col min-w-[130px] flex-1',
-        'rounded-2xl border transition-colors',
+        'rounded-[var(--radius-card)] border transition-colors',
         today
           ? 'border-[var(--color-accent)]/40 bg-[var(--color-accent)]/5'
-          : isOver ? 'border-blue-300/60 bg-blue-50/30' : 'border-white/40 bg-white/30',
+          : isOver ? 'border-blue-300/60 bg-blue-50/30' : 'border-white/60 bg-white/70',
         'p-2 gap-2',
       ].join(' ')}
     >
@@ -140,7 +140,7 @@ function DayColumn({ day, onAddClick, onEdit, onDelete, onCardClick }: DayColumn
             return (
               <div
                 key={a.id}
-                className="relative rounded-xl border border-blue-200/80 bg-blue-50/60 backdrop-blur-sm shadow-sm overflow-hidden cursor-pointer hover:bg-blue-100/60 transition-colors"
+                className="relative rounded-xl border border-blue-200/80 bg-blue-50/80 shadow-sm overflow-hidden cursor-pointer hover:bg-blue-100/60 transition-colors"
                 onClick={() => onCardClick(null, a)}
               >
                 <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-blue-400/60 rounded-l-xl" />

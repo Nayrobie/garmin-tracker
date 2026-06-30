@@ -31,10 +31,10 @@ export function RaceCountdown() {
         className="w-full text-left group"
       >
         <div className="flex items-center justify-between mb-2 px-1">
-          <span className="text-[11px] font-semibold tracking-widest text-white/50 uppercase">
+          <span className="text-[11px] font-semibold tracking-widest text-gray-400 uppercase">
             Races
           </span>
-          <span className="text-[11px] text-gray-300 group-hover:text-[var(--color-accent)] transition-colors">
+          <span className="text-[11px] text-gray-400 group-hover:text-[var(--color-accent)] transition-colors">
             Manage →
           </span>
         </div>
@@ -42,7 +42,7 @@ export function RaceCountdown() {
         {loading ? (
           <div className="text-xs text-gray-400 px-1">Loading…</div>
         ) : upcoming.length === 0 ? (
-          <div className="text-xs text-gray-300 px-1 italic">No upcoming races</div>
+          <div className="text-xs text-gray-400 px-1 italic">No upcoming races</div>
         ) : (
           <div className="space-y-1.5">
             {upcoming.map(race => {
@@ -51,17 +51,17 @@ export function RaceCountdown() {
               return (
                 <div
                   key={race.id}
-                  className="flex items-center gap-2 px-2 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                  className="flex items-center gap-2 px-2 py-2 rounded-lg bg-gray-100/60 hover:bg-gray-100 transition-colors"
                 >
                   <Flag
                     size={13}
                     className={urgent ? 'text-orange-400' : 'text-[var(--color-accent)]'}
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium text-white/90 truncate">
+                    <div className="text-xs font-medium text-gray-800 truncate">
                       {race.name}
                     </div>
-                    <div className="text-[11px] text-white/50">
+                    <div className="text-[11px] text-gray-500">
                       {RACE_TYPE_LABELS[race.type]} · {race.distance_km}km{race.elevation_m ? ` · ${race.elevation_m}m↑` : ''}
                     </div>
                   </div>
