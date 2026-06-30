@@ -102,13 +102,13 @@ function GranularityBar({ value, onChange }: { value: Granularity; onChange: (g:
     { key: 'all', label: 'All' },
   ];
   return (
-    <div className="flex gap-1 bg-gray-50 border border-gray-200 rounded p-1">
+    <div className="flex gap-1 bg-white/60 rounded-lg border border-white/50 p-0.5">
       {opts.map(({ key, label }) => (
         <button
           key={key}
           onClick={() => onChange(key)}
-          className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-            value === key ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-100'
+          className={`px-3 py-1 text-[11px] font-medium rounded-md transition-colors ${
+            value === key ? 'bg-[var(--color-accent)] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
           }`}
         >
           {label}

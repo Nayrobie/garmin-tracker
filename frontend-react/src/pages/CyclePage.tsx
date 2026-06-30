@@ -4,7 +4,7 @@
  */
 import { useEffect, useState, useCallback } from 'react';
 import { format, parseISO, startOfMonth, endOfMonth, subMonths, addMonths, startOfYear, endOfYear, isSameMonth, differenceInDays, addDays } from 'date-fns';
-import { Moon, RefreshCw, ChevronLeft, ChevronRight, Heart, Activity, Droplets } from 'lucide-react';
+import { Moon, RefreshCw, ChevronLeft, ChevronRight, Heart, Droplets } from 'lucide-react';
 import {
   ComposedChart,
   Bar,
@@ -14,6 +14,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
+  ReferenceArea,
   CartesianGrid,
 } from 'recharts';
 
@@ -54,14 +55,209 @@ const PHASE_COLORS: Record<string, string> = {
   luteal: '#fbbf24',
 };
 
-const PHASE_META: Record<string, { label: string; emoji: string; desc: string }> = {
-  menstruation: { label: 'Period', emoji: '🔴', desc: 'Rest & recover' },
-  follicular: { label: 'Follicular', emoji: '🔵', desc: 'Energy rising' },
-  ovulation: { label: 'Ovulation', emoji: '🟢', desc: 'Peak performance' },
-  luteal: { label: 'Luteal', emoji: '🟡', desc: 'Wind down' },
+/** Compute cycle phase for a date given an array of cycles (sorted ascending by start_date). */
+function computePhaseForDate(dateStr: string, cycles: MenstrualCycle[]): string | null {
+  if (cycles.length === 0) return null;
+  const target = parseISO(dateStr);
+  const sorted = [...cycles].sort((a, b) => a.start_date.localeCompare(b.start_date));
+
+  for (let i = 0; i < sorted.length; i++) {
+    const cycleStart = parseISO(sorted[i].start_date);
+    const cycleEnd = i + 1 < sorted.length
+      ? addDays(parseISO(sorted[i + 1].start_date), -1)
+      : addDays(cycleStart, (sorted[i].cycle_length ?? 28) - 1);
+
+    if (target >= cycleStart && target <= cycleEnd) {
+      let day = differenceInDays(target, cycleStart) + 1;
+      const estCycle = sorted[i].cycle_length ?? 28;
+      if (day > estCycle) {
+        day = ((day - 1) % estCycle) + 1;
+      }
+      const periodLen = sorted[i].period_length ?? 5;
+      if (day <= periodLen) return 'menstruation';
+      if (day <= 13) return 'follicular';
+      if (day <= 16) return 'ovulation';
+      return 'luteal';
+    }
+  }
+  return null;
+}
+
+const PHASE_META: Record<string, { label: string; emoji: string; desc: string; tip: string; why: string }> = {
+  menstruation: {
+    label: 'Period', emoji: '🔴', desc: 'Rest & recover',
+    tip: 'Yoga, light walks, gentle stretching',
+    why: 'Hormones at lowest — body is shedding lining. RHR may drop as progesterone clears.',
+  },
+  follicular: {
+    label: 'Follicular', emoji: '🔵', desc: 'Energy rising',
+    tip: 'Best time for hard intervals, strength PRs, long runs',
+    why: 'Estrogen rises → better recovery, lower RHR, higher HRV. Peak athletic window.',
+  },
+  ovulation: {
+    label: 'Ovulation', emoji: '🟢', desc: 'Peak performance',
+    tip: 'Short intense efforts, but watch for joint laxity',
+    why: 'Progesterone spikes → raises body temp, RHR increases, HRV drops. Sleep quality may dip.',
+  },
+  luteal: {
+    label: 'Luteal', emoji: '🟡', desc: 'Wind down',
+    tip: 'Steady-state cardio, moderate strength, avoid overtraining',
+    why: 'Sustained progesterone → elevated RHR, reduced recovery capacity. Prioritise sleep.',
+  },
 };
 
 type Granularity = 'month' | 'year';
+
+interface CycleInfo {
+  dayNum: number;
+  cycleLen: number;
+  phase: string;
+  daysUntilNext: number;
+  nextPeriod: Date;
+  segments: { phase: string; start: number; end: number }[];
+  periodLen: number;
+}
+
+function CycleTrackerCard({ cycleInfo }: { cycleInfo: CycleInfo }) {
+  const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
+  const activeMeta = PHASE_META[cycleInfo.phase];
+  const activeColor = PHASE_COLORS[cycleInfo.phase];
+
+  // Progress through current phase
+  const currentSeg = cycleInfo.segments.find((s) => s.phase === cycleInfo.phase);
+  const phaseProgress = currentSeg
+    ? (cycleInfo.dayNum - currentSeg.start) / (currentSeg.end - currentSeg.start + 1)
+    : 0;
+  const daysLeftInPhase = currentSeg ? currentSeg.end - cycleInfo.dayNum + 1 : 0;
+
+  // SVG progress ring
+  const radius = 22;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDash = circumference * phaseProgress;
+
+  return (
+    <Card className="overflow-visible">
+      <div className="flex flex-col gap-3">
+        {/* Top row: status + timeline + next period */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          {/* Phase ring + info */}
+          <div className="flex items-center gap-3 min-w-[200px]">
+            <div className="relative w-12 h-12 flex-shrink-0">
+              <svg className="w-12 h-12 -rotate-90" viewBox="0 0 52 52">
+                <circle cx="26" cy="26" r={radius} fill="none" stroke="#e5e7eb" strokeWidth="3" />
+                <circle
+                  cx="26" cy="26" r={radius}
+                  fill="none"
+                  stroke={activeColor}
+                  strokeWidth="3"
+                  strokeDasharray={`${strokeDash} ${circumference}`}
+                  strokeLinecap="round"
+                  className="transition-all duration-500"
+                />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center text-base">
+                {activeMeta.emoji}
+              </span>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-800">
+                Day {cycleInfo.dayNum}
+                <span className="text-gray-400 font-normal"> / {cycleInfo.cycleLen}</span>
+              </p>
+              <p className="text-xs text-gray-600">
+                {activeMeta.label} <span className="text-gray-400">· {daysLeftInPhase}d left in phase</span>
+              </p>
+              <p className="text-[10px] text-emerald-600 mt-0.5">
+                {activeMeta.tip}
+              </p>
+            </div>
+          </div>
+
+          {/* Timeline */}
+          <div className="flex-1">
+            <div className="relative flex h-5">
+              <div className="absolute inset-0 rounded-full shadow-inner bg-gray-100" />
+              {cycleInfo.segments.map((seg, idx) => {
+                const width = ((seg.end - seg.start + 1) / cycleInfo.cycleLen) * 100;
+                const isActive = cycleInfo.phase === seg.phase;
+                const isSelected = selectedPhase === seg.phase;
+                const meta = PHASE_META[seg.phase];
+                const isFirst = idx === 0;
+                const isLast = idx === cycleInfo.segments.length - 1;
+                return (
+                  <button
+                    key={seg.phase}
+                    type="button"
+                    className={`relative flex items-center justify-center z-10 transition-all ${isSelected ? 'scale-y-125' : 'hover:scale-y-110'}`}
+                    style={{ width: `${width}%` }}
+                    onClick={() => setSelectedPhase(isSelected ? null : seg.phase)}
+                  >
+                    <div
+                      className="absolute inset-0 transition-all"
+                      style={{
+                        backgroundColor: PHASE_COLORS[seg.phase] + (isActive || isSelected ? '' : '80'),
+                        opacity: isActive || isSelected ? 1 : 0.5,
+                        borderRadius: isFirst ? '9999px 0 0 9999px' : isLast ? '0 9999px 9999px 0' : '0',
+                      }}
+                    />
+                    <span className="relative text-[9px] font-medium text-white drop-shadow-sm truncate px-1">
+                      {width > 12 ? meta.label : ''}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {/* Day marker */}
+            <div className="relative h-2 mt-0.5">
+              <div
+                className="absolute w-0 h-0 border-l-[4px] border-r-[4px] border-b-[5px] border-l-transparent border-r-transparent border-b-gray-700 transition-all"
+                style={{ left: `${((cycleInfo.dayNum - 0.5) / cycleInfo.cycleLen) * 100}%`, transform: 'translateX(-4px) rotate(180deg)' }}
+              />
+            </div>
+          </div>
+
+          {/* Next period */}
+          <div className="text-right min-w-[90px]">
+            <div className="flex items-center justify-end gap-1.5">
+              <Droplets size={13} className="text-rose-400" />
+              <span className="text-sm font-semibold text-gray-700">{cycleInfo.daysUntilNext}d</span>
+            </div>
+            <p className="text-[10px] text-gray-400">
+              Next period ~{format(cycleInfo.nextPeriod, 'MMM d')}
+            </p>
+          </div>
+        </div>
+
+        {/* Expanded phase detail (click a segment to show) */}
+        {selectedPhase && (
+          <div
+            className="flex items-start gap-3 p-3 rounded-lg border transition-all animate-in fade-in duration-200"
+            style={{ backgroundColor: PHASE_COLORS[selectedPhase] + '10', borderColor: PHASE_COLORS[selectedPhase] + '40' }}
+          >
+            <span className="text-lg">{PHASE_META[selectedPhase].emoji}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-gray-800 mb-0.5">
+                {PHASE_META[selectedPhase].label}
+                <span className="font-normal text-gray-400 ml-1">
+                  · days {cycleInfo.segments.find((s) => s.phase === selectedPhase)?.start}–{cycleInfo.segments.find((s) => s.phase === selectedPhase)?.end}
+                </span>
+              </p>
+              <p className="text-[11px] text-gray-600 mb-1">{PHASE_META[selectedPhase].why}</p>
+              <p className="text-[11px] text-emerald-700 font-medium"> {PHASE_META[selectedPhase].tip}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedPhase(null)}
+              className="text-gray-400 hover:text-gray-600 text-xs p-1"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -136,7 +332,7 @@ export function CyclePage() {
     hrv: r.hrv_overnight ?? null,
     rhr: r.resting_hr ?? null,
     cycleDay: r.cycle_day ?? null,
-    phase: r.cycle_phase ?? null,
+    phase: computePhaseForDate(r.date, cycles),
   }));
 
   // Computed stats
@@ -157,8 +353,16 @@ export function CyclePage() {
     const wr = records.filter((r) => r.resting_hr != null);
     return wr.length ? Math.round(wr.reduce((s, r) => s + (r.resting_hr ?? 0), 0) / wr.length) : null;
   })();
+  const minRhr = (() => {
+    const vals = records.map((r) => r.resting_hr).filter((v): v is number => v != null);
+    return vals.length ? Math.min(...vals) : null;
+  })();
+  const maxRhr = (() => {
+    const vals = records.map((r) => r.resting_hr).filter((v): v is number => v != null);
+    return vals.length ? Math.max(...vals) : null;
+  })();
 
-  const hasCycleData = records.some((r) => r.cycle_phase != null);
+  const hasCycleData = cycles.length > 0;
 
   // Current cycle computation
   const currentCycleInfo = (() => {
@@ -221,13 +425,13 @@ export function CyclePage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex rounded-md border border-gray-200 overflow-hidden text-[11px]">
+          <div className="flex items-center gap-1 bg-white/60 rounded-lg border border-white/50 p-0.5">
             {(['month', 'year'] as const).map((g) => (
               <button
                 key={g}
                 onClick={() => setGranularity(g)}
-                className={`px-2.5 py-1 capitalize ${
-                  granularity === g ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium capitalize transition-colors ${
+                  granularity === g ? 'bg-[var(--color-accent)] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
                 {g}
@@ -267,74 +471,7 @@ export function CyclePage() {
 
       {/* Cycle tracker card */}
       {currentCycleInfo && (
-        <Card className="overflow-hidden">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-            {/* Current status */}
-            <div className="flex items-center gap-3 min-w-[180px]">
-              <div
-                className="w-11 h-11 rounded-full flex items-center justify-center text-lg shadow-sm"
-                style={{ backgroundColor: PHASE_COLORS[currentCycleInfo.phase] + '33', borderColor: PHASE_COLORS[currentCycleInfo.phase], borderWidth: 2 }}
-              >
-                {PHASE_META[currentCycleInfo.phase].emoji}
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-gray-800">
-                  Day {currentCycleInfo.dayNum}
-                  <span className="text-gray-400 font-normal"> / {currentCycleInfo.cycleLen}</span>
-                </p>
-                <p className="text-xs text-gray-500">
-                  {PHASE_META[currentCycleInfo.phase].label} — {PHASE_META[currentCycleInfo.phase].desc}
-                </p>
-              </div>
-            </div>
-
-            {/* Timeline */}
-            <div className="flex-1">
-              <div className="flex rounded-full overflow-hidden h-4 shadow-inner bg-gray-100">
-                {currentCycleInfo.segments.map((seg) => {
-                  const width = ((seg.end - seg.start + 1) / currentCycleInfo.cycleLen) * 100;
-                  const isActive = currentCycleInfo.phase === seg.phase;
-                  return (
-                    <div
-                      key={seg.phase}
-                      className="relative flex items-center justify-center transition-all"
-                      style={{
-                        width: `${width}%`,
-                        backgroundColor: PHASE_COLORS[seg.phase] + (isActive ? '' : '80'),
-                        opacity: isActive ? 1 : 0.55,
-                      }}
-                      title={`${PHASE_META[seg.phase].label}: days ${seg.start}–${seg.end}`}
-                    >
-                      {width > 12 && (
-                        <span className="text-[9px] font-medium text-white drop-shadow-sm truncate px-1">
-                          {PHASE_META[seg.phase].label}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              {/* Day marker */}
-              <div className="relative h-2 mt-0.5">
-                <div
-                  className="absolute w-0 h-0 border-l-[4px] border-r-[4px] border-b-[5px] border-l-transparent border-r-transparent border-b-gray-700"
-                  style={{ left: `${((currentCycleInfo.dayNum - 0.5) / currentCycleInfo.cycleLen) * 100}%`, transform: 'translateX(-4px) rotate(180deg)' }}
-                />
-              </div>
-            </div>
-
-            {/* Next period */}
-            <div className="text-right min-w-[90px]">
-              <div className="flex items-center justify-end gap-1.5">
-                <Droplets size={13} className="text-rose-400" />
-                <span className="text-sm font-semibold text-gray-700">{currentCycleInfo.daysUntilNext}d</span>
-              </div>
-              <p className="text-[10px] text-gray-400">
-                Next period ~{format(currentCycleInfo.nextPeriod, 'MMM d')}
-              </p>
-            </div>
-          </div>
-        </Card>
+        <CycleTrackerCard cycleInfo={currentCycleInfo} />
       )}
 
       {/* Phase strip on charts (when viewing historical data without current cycle card) */}
@@ -373,15 +510,15 @@ export function CyclePage() {
                 <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Sleep Duration & Score</h2>
               </div>
               <div className="flex gap-2 text-[10px] text-gray-400">
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#4338ca]" />Deep</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#818cf8]" />Light</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#a78bfa]" />REM</span>
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#fbbf24]" />Awake</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#6366f1]" />Score</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#a78bfa]" />REM</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#818cf8]" />Light</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#4338ca]" />Deep</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#14b8a6]" />Score</span>
               </div>
             </div>
             <ResponsiveContainer width="100%" height={180}>
-              <ComposedChart data={chartData} barCategoryGap="15%" margin={{ top: 5, right: 5, bottom: 0, left: -10 }}>
+              <ComposedChart data={chartData} barCategoryGap="15%" margin={{ top: 5, right: 50, bottom: 0, left: -10 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis yAxisId="hours" tick={{ fontSize: 10 }} unit="h" axisLine={false} tickLine={false} domain={[0, 'dataMax + 1']} />
@@ -398,49 +535,90 @@ export function CyclePage() {
                   }}
                 />
                 {avgTotalHours != null && (
-                  <ReferenceLine yAxisId="hours" y={avgTotalHours} stroke="#9ca3af" strokeWidth={1} strokeDasharray="4 3" />
+                  <ReferenceLine yAxisId="hours" y={avgTotalHours} stroke="#9ca3af" strokeWidth={1} strokeDasharray="4 3" label={{ value: `Avg ${formatHoursMin(avgTotal!)}`, position: 'right', fontSize: 9, fill: '#6b7280', offset: 5 }} />
                 )}
                 <Bar yAxisId="hours" dataKey="Deep" stackId="sleep" fill="#4338ca" radius={[0, 0, 0, 0]} />
                 <Bar yAxisId="hours" dataKey="Light" stackId="sleep" fill="#818cf8" />
                 <Bar yAxisId="hours" dataKey="REM" stackId="sleep" fill="#a78bfa" />
                 <Bar yAxisId="hours" dataKey="Awake" stackId="sleep" fill="#fbbf24" radius={[2, 2, 0, 0]} />
-                <Line yAxisId="score" type="monotone" dataKey="score" stroke="#6366f1" strokeWidth={2} dot={false} connectNulls />
+                <Line yAxisId="score" type="monotone" dataKey="score" stroke="#14b8a6" strokeWidth={2} dot={false} connectNulls />
               </ComposedChart>
             </ResponsiveContainer>
           </Card>
 
-          {/* HRV & Resting HR */}
-          {chartData.some((d) => d.hrv != null) && (
+          {/* Resting HR + Score with cycle phase bands */}
+          {chartData.some((d) => d.rhr != null) && (
             <Card className="overflow-hidden">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <Activity size={14} className="text-emerald-500" />
-                  <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">HRV & Resting Heart Rate</h2>
+                  <Heart size={14} className="text-rose-500" />
+                  <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Resting HR & Cycle Phases</h2>
                 </div>
                 <div className="flex gap-2 text-[10px] text-gray-400">
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" />HRV</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" />RHR</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500" />RHR</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-teal-500" />Score</span>
+                  {Object.entries(PHASE_META).map(([p, m]) => (
+                    <span key={p} className="flex items-center gap-0.5">
+                      <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: PHASE_COLORS[p] + '60' }} />
+                      {m.label}
+                    </span>
+                  ))}
                 </div>
               </div>
-              <ResponsiveContainer width="100%" height={130}>
-                <ComposedChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -10 }}>
+              <ResponsiveContainer width="100%" height={150}>
+                <ComposedChart data={chartData} margin={{ top: 5, right: 40, bottom: 0, left: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <YAxis yAxisId="hrv" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} domain={['dataMin - 10', 'dataMax + 10']} />
-                  <YAxis yAxisId="rhr" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} domain={['dataMin - 5', 'dataMax + 5']} />
+                  <YAxis yAxisId="rhr" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} domain={['dataMin - 5', 'dataMax + 5']} label={{ value: 'RHR (bpm)', angle: -90, position: 'insideLeft', fontSize: 9, fill: '#6b7280', offset: 10 }} />
+                  <YAxis yAxisId="score" orientation="right" domain={[0, 100]} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} label={{ value: 'Score', angle: 90, position: 'insideRight', fontSize: 9, fill: '#6b7280', offset: 10 }} />
                   <Tooltip
                     contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e5e7eb' }}
-                    formatter={(value, name) => [`${value}${name === 'HRV' ? ' ms' : ' bpm'}`, name as string]}
+                    formatter={(value, name) => {
+                      if (name === 'Score') return [`${value}`, 'Score'];
+                      return [`${value} bpm`, 'Resting HR'];
+                    }}
                     labelFormatter={(label) => {
                       const item = chartData.find((d) => d.date === label);
-                      return item?.fullDate ?? label;
+                      const phaseLabel = item?.phase ? ` — ${PHASE_META[item.phase]?.label}` : '';
+                      return (item?.fullDate ?? label) + phaseLabel;
                     }}
                   />
-                  {avgHrv != null && (
-                    <ReferenceLine yAxisId="hrv" y={avgHrv} stroke="#9ca3af" strokeWidth={1} strokeDasharray="4 3" />
+                  {avgRhr != null && (
+                    <ReferenceLine yAxisId="rhr" y={avgRhr} stroke="#9ca3af" strokeWidth={1} strokeDasharray="4 3" label={{ value: `Avg ${avgRhr}`, position: 'insideTopLeft', fontSize: 9, fill: '#6b7280' }} />
                   )}
-                  <Line yAxisId="hrv" type="monotone" dataKey="hrv" name="HRV" stroke="#10b981" strokeWidth={2} dot={{ r: 2, fill: '#10b981' }} connectNulls />
-                  <Line yAxisId="rhr" type="monotone" dataKey="rhr" name="RHR" stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 1.5, fill: '#f59e0b' }} connectNulls />
+                  {minRhr != null && (
+                    <ReferenceLine yAxisId="rhr" y={minRhr} stroke="#9ca3af" strokeWidth={0.8} strokeDasharray="3 2" label={{ value: `Low ${minRhr}`, position: 'insideBottomLeft', fontSize: 9, fill: '#6b7280' }} />
+                  )}
+                  {maxRhr != null && (
+                    <ReferenceLine yAxisId="rhr" y={maxRhr} stroke="#9ca3af" strokeWidth={0.8} strokeDasharray="3 2" label={{ value: `High ${maxRhr}`, position: 'insideTopLeft', fontSize: 9, fill: '#6b7280' }} />
+                  )}
+                  {/* Phase background bands */}
+                  {(() => {
+                    const bands: { startIdx: number; endIdx: number; phase: string }[] = [];
+                    let curPhase: string | null = null;
+                    let bandStart = 0;
+                    chartData.forEach((d, i) => {
+                      if (d.phase !== curPhase) {
+                        if (curPhase) bands.push({ startIdx: bandStart, endIdx: i - 1, phase: curPhase });
+                        curPhase = d.phase;
+                        bandStart = i;
+                      }
+                    });
+                    if (curPhase) bands.push({ startIdx: bandStart, endIdx: chartData.length - 1, phase: curPhase });
+                    return bands.filter((b) => b.phase).map((b, i) => (
+                      <ReferenceArea
+                        key={i}
+                        yAxisId="rhr"
+                        x1={chartData[b.startIdx].date}
+                        x2={chartData[b.endIdx].date}
+                        fill={PHASE_COLORS[b.phase] + '30'}
+                        fillOpacity={1}
+                        strokeOpacity={0}
+                      />
+                    ));
+                  })()}
+                  <Line yAxisId="rhr" type="monotone" dataKey="rhr" name="RHR" stroke="#f43f5e" strokeWidth={2} dot={{ r: 2, fill: '#f43f5e' }} connectNulls />
+                  <Line yAxisId="score" type="monotone" dataKey="score" name="Score" stroke="#14b8a6" strokeWidth={1.5} dot={false} connectNulls />
                 </ComposedChart>
               </ResponsiveContainer>
             </Card>
@@ -483,16 +661,19 @@ export function CyclePage() {
                       <td className="py-1.5 pr-3 text-right text-emerald-600 font-medium">{r.hrv_overnight ?? '—'}</td>
                       <td className="py-1.5 pr-3 text-right text-amber-600">{r.resting_hr ?? '—'}</td>
                       <td className="py-1.5 text-center">
-                        {r.cycle_phase ? (
+                        {(() => {
+                          const phase = computePhaseForDate(r.date, cycles);
+                          return phase ? (
                           <span
                             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium text-gray-700"
-                            style={{ backgroundColor: PHASE_COLORS[r.cycle_phase] + '40', borderLeft: `3px solid ${PHASE_COLORS[r.cycle_phase]}` }}
+                            style={{ backgroundColor: PHASE_COLORS[phase] + '40', borderLeft: `3px solid ${PHASE_COLORS[phase]}` }}
                           >
-                            {PHASE_META[r.cycle_phase]?.label ?? r.cycle_phase}
+                            {PHASE_META[phase]?.label ?? phase}
                           </span>
                         ) : (
                           <span className="text-gray-300">—</span>
-                        )}
+                        );
+                        })()}
                       </td>
                     </tr>
                   ))}

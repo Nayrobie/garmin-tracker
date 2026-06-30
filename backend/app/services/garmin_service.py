@@ -711,6 +711,11 @@ def _calc_cycle_day(
 
         if cycle_start <= target_date <= cycle_end:
             day = (target_date - cycle_start).days + 1
+            # If the gap to next cycle is much longer than a normal cycle,
+            # wrap days using estimated cycle length to avoid a single giant luteal block.
+            est_cycle = cycle.cycle_length or 28
+            if day > est_cycle:
+                day = ((day - 1) % est_cycle) + 1
             phase = _day_to_phase(day, cycle.period_length or 5)
             return day, phase
 
