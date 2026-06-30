@@ -21,6 +21,9 @@ from app.models.workout import (
     RaceCreate,
     RaceRead,
     RaceUpdate,
+    UserSettingsORM,
+    UserSettingsRead,
+    UserSettingsUpdate,
     WeeklySchedule,
     WeeklyStats,
     RunningPeriodStats,
@@ -39,7 +42,6 @@ from app.services.garmin_service import (
     sync_hrv_and_cycle_day,
     sync_menstrual_cycles,
 )
-from app.config import TRAINING_RULES
 
 router = APIRouter(prefix="/api")
 
@@ -88,6 +90,56 @@ def delete_race(race_id: int, db: Session = Depends(get_db)) -> None:
         raise HTTPException(status_code=404, detail="Race not found")
     db.delete(race)
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# User Settings
+# ---------------------------------------------------------------------------
+
+
+def _get_settings(db: Session) -> UserSettingsORM:
+    """Return the singleton settings row, creating it with defaults if missing.
+
+    Args:
+        db: Database session.
+
+    Returns:
+        The UserSettingsORM instance (id=1).
+    """
+    settings = db.get(UserSettingsORM, 1)
+    if settings is None:
+        settings = UserSettingsORM(id=1)
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    return settings
+
+
+@router.get("/settings", response_model=UserSettingsRead)
+def get_settings(db: Session = Depends(get_db)) -> UserSettingsORM:
+    """Return the current user settings."""
+    return _get_settings(db)
+
+
+@router.put("/settings", response_model=UserSettingsRead)
+def update_settings(
+    payload: UserSettingsUpdate, db: Session = Depends(get_db)
+) -> UserSettingsORM:
+    """Partially update user settings (only supplied fields are changed).
+
+    Args:
+        payload: Fields to update.
+        db: Database session.
+
+    Returns:
+        Updated settings.
+    """
+    settings = _get_settings(db)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(settings, field, value)
+    db.commit()
+    db.refresh(settings)
+    return settings
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +308,54 @@ def delete_workout_group(group_id: str, db: Session = Depends(get_db)) -> None:
     db.commit()
 
 
+@router.post("/schedule/generate-plan")
+def generate_training_plan_route(
+    starting_volume_km: float = 12.0,
+    weeks_ahead: int = 17,
+    start_date: Optional[str] = None,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Generate a progressive multi-week training plan and save to DB.
+
+    Args:
+        starting_volume_km: Total running km for week 1.
+        weeks_ahead: Number of weeks to plan.
+        start_date: ISO date of week 1 Monday (defaults to this Monday).
+        db: Database session.
+
+    Returns:
+        Plan summary with weekly breakdown.
+    """
+    from app.services.training_plan_service import generate_training_plan
+
+    parsed_start = date.fromisoformat(start_date) if start_date else None
+    return generate_training_plan(
+        db,
+        starting_volume_km=starting_volume_km,
+        weeks_ahead=weeks_ahead,
+        start_date=parsed_start,
+    )
+
+
+@router.post("/schedule/adjust-plan")
+def adjust_training_plan_route(
+    weeks_ahead: Optional[int] = None,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Regenerate the training plan based on actual progress this week.
+
+    Args:
+        weeks_ahead: Weeks to plan ahead. Defaults to auto (through last race).
+        db: Database session.
+
+    Returns:
+        Adjusted plan summary.
+    """
+    from app.services.training_plan_service import adjust_plan_from_progress
+
+    return adjust_plan_from_progress(db, weeks_ahead=weeks_ahead)
+
+
 # ---------------------------------------------------------------------------
 # Garmin sync
 # ---------------------------------------------------------------------------
@@ -393,7 +493,8 @@ def get_weekly_stats(
         volume_change_pct = round(
             ((total_volume_km - prev_week_volume_km) / prev_week_volume_km) * 100, 1
         )
-        max_increase = TRAINING_RULES["max_weekly_volume_increase_percent"]
+        settings = db.get(UserSettingsORM, 1)
+        max_increase = settings.max_weekly_volume_increase_pct if settings else 10
         volume_alert = volume_change_pct > max_increase
 
     return WeeklyStats(
@@ -449,10 +550,12 @@ def get_running_stats(
         .all()
     )
 
-    # Filter out hikes mapped as runs (pace > 12:00/km = hiking)
+    # Filter out hikes mapped as runs (pace above threshold = hiking)
+    settings = db.get(UserSettingsORM, 1)
+    hiking_threshold = settings.hiking_pace_threshold_sec if settings else 720
     actual_runs = [
         r for r in runs
-        if r.avg_pace_per_km and _pace_to_seconds(r.avg_pace_per_km) < 720
+        if r.avg_pace_per_km and _pace_to_seconds(r.avg_pace_per_km) < hiking_threshold
     ]
 
     # --- Progression ---
@@ -467,19 +570,42 @@ def get_running_stats(
         period_data[key].append(r)
 
     progression: list[RunningPeriodStats] = []
-    for period_key in sorted(period_data.keys()):
-        group = period_data[period_key]
-        distances = [r.distance_km for r in group if r.distance_km]
-        hrs = [r.avg_hr for r in group if r.avg_hr]
-        paces = [_pace_to_seconds(r.avg_pace_per_km) for r in group if r.avg_pace_per_km]
 
-        progression.append(RunningPeriodStats(
-            period=period_key,
-            total_km=round(sum(distances), 2),
-            run_count=len(group),
-            avg_pace=_seconds_to_pace(sum(paces) / len(paces)) if paces else None,
-            avg_hr=round(sum(hrs) / len(hrs)) if hrs else None,
-        ))
+    if granularity == "monthly":
+        # From January of current year to current month (inclusive)
+        today = date.today()
+        monthly_keys: list[str] = []
+        month = 1
+        while (today.year, month) <= (today.year, today.month):
+            monthly_keys.append(f"{today.year:04d}-{month:02d}")
+            month += 1
+
+        for period_key in monthly_keys:
+            group = period_data.get(period_key, [])
+            distances = [r.distance_km for r in group if r.distance_km]
+            hrs = [r.avg_hr for r in group if r.avg_hr]
+            paces = [_pace_to_seconds(r.avg_pace_per_km) for r in group if r.avg_pace_per_km]
+            progression.append(RunningPeriodStats(
+                period=period_key,
+                total_km=round(sum(distances), 2),
+                run_count=len(group),
+                avg_pace=_seconds_to_pace(sum(paces) / len(paces)) if paces else None,
+                avg_hr=round(sum(hrs) / len(hrs)) if hrs else None,
+            ))
+    else:
+        # Yearly: all years with data
+        for period_key in sorted(period_data.keys()):
+            group = period_data[period_key]
+            distances = [r.distance_km for r in group if r.distance_km]
+            hrs = [r.avg_hr for r in group if r.avg_hr]
+            paces = [_pace_to_seconds(r.avg_pace_per_km) for r in group if r.avg_pace_per_km]
+            progression.append(RunningPeriodStats(
+                period=period_key,
+                total_km=round(sum(distances), 2),
+                run_count=len(group),
+                avg_pace=_seconds_to_pace(sum(paces) / len(paces)) if paces else None,
+                avg_hr=round(sum(hrs) / len(hrs)) if hrs else None,
+            ))
 
     # --- Personal Records ---
     personal_records: list[PersonalRecord] = []
@@ -568,16 +694,28 @@ def get_sleep_records(
 
 
 @router.post("/sleep/sync")
-def sync_sleep(days_back: int = 30, db: Session = Depends(get_db)) -> dict:
-    """Trigger a Garmin sleep data sync.
+def sync_sleep(
+    db: Session = Depends(get_db),
+) -> dict:
+    """Trigger a Garmin sleep data sync (incremental from last synced record).
 
     Args:
-        days_back: Number of days to sync.
         db: Database session.
 
     Returns:
         Dict with synced count and optional error.
     """
+    # Incremental: pull from the day after the last sleep record, or 1 year back for first sync
+    today = date.today()
+    latest = (
+        db.query(SleepRecordORM)
+        .order_by(SleepRecordORM.date.desc())
+        .first()
+    )
+    if latest:
+        days_back = (today - latest.date).days + 1
+    else:
+        days_back = 365  # first sync: full year
     result = sync_garmin_sleep(db, days_back=days_back)
     # Also enrich with HRV + cycle data after syncing sleep
     enrich_result = sync_hrv_and_cycle_day(db, days_back=days_back)
@@ -589,16 +727,20 @@ def sync_sleep(days_back: int = 30, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/sleep/enrich")
-def enrich_sleep(days_back: int = 30, db: Session = Depends(get_db)) -> dict:
+def enrich_sleep(
+    days_back: Optional[int] = None, db: Session = Depends(get_db)
+) -> dict:
     """Enrich sleep records with HRV and cycle day/phase.
 
     Args:
-        days_back: Number of days to enrich.
+        days_back: Number of days to enrich. Defaults to user setting.
         db: Database session.
 
     Returns:
         Dict with enriched count and optional error.
     """
+    if days_back is None:
+        days_back = 30  # default for manual enrich calls
     return sync_hrv_and_cycle_day(db, days_back=days_back)
 
 
@@ -625,15 +767,28 @@ def get_cycles(db: Session = Depends(get_db)) -> list[MenstrualCycleORM]:
 
 
 @router.post("/cycles/sync")
-def sync_cycles(days_back: int = 365, db: Session = Depends(get_db)) -> dict:
-    """Trigger a Garmin menstrual cycle sync.
+def sync_cycles(
+    db: Session = Depends(get_db),
+) -> dict:
+    """Trigger a Garmin menstrual cycle sync (incremental from last synced record).
 
     Args:
-        days_back: How far back to sync.
         db: Database session.
 
     Returns:
         Dict with synced count and optional error.
     """
+    # Incremental: pull from the day after the last cycle, or 1 year back for first sync
+    today = date.today()
+    latest_cycle = (
+        db.query(MenstrualCycleORM)
+        .order_by(MenstrualCycleORM.start_date.desc())
+        .first()
+    )
+    if latest_cycle:
+        last_date = date.fromisoformat(str(latest_cycle.start_date))
+        days_back = (today - last_date).days + 1
+    else:
+        days_back = 365  # first sync: full year
     return sync_menstrual_cycles(db, days_back=days_back)
 

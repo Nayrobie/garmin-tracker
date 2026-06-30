@@ -66,7 +66,20 @@ const PHASE_COLORS: Record<string, string> = {
   luteal: '#fbbf24',
 };
 
-/** Compute cycle phase for a date given an array of cycles (sorted ascending by start_date). */
+/** Determine phase name from cycle day number. */
+function phaseForDay(day: number, cycle: MenstrualCycle): string {
+  const periodLen = cycle.period_length ?? 5;
+  const cycleLen = cycle.cycle_length ?? 28;
+  const rawFertileStart = cycle.fertile_window_start_day ?? 12;
+  const fertileStart = rawFertileStart > cycleLen ? 12 : rawFertileStart;
+  const fertileLen = cycle.fertile_window_length ?? 5;
+  if (day <= periodLen) return 'menstruation';
+  if (day < fertileStart) return 'follicular';
+  if (day < fertileStart + fertileLen) return 'ovulation';
+  return 'luteal';
+}
+
+/** Compute cycle phase for a date. Projects forward from last known cycle if date is beyond its end. */
 function computePhaseForDate(dateStr: string, cycles: MenstrualCycle[]): string | null {
   if (cycles.length === 0) return null;
   const target = parseISO(dateStr);
@@ -79,17 +92,18 @@ function computePhaseForDate(dateStr: string, cycles: MenstrualCycle[]): string 
       : addDays(cycleStart, (sorted[i].cycle_length ?? 28) - 1);
 
     if (target >= cycleStart && target <= cycleEnd) {
-      let day = differenceInDays(target, cycleStart) + 1;
-      const estCycle = sorted[i].cycle_length ?? 28;
-      if (day > estCycle) {
-        day = ((day - 1) % estCycle) + 1;
-      }
-      const periodLen = sorted[i].period_length ?? 5;
-      if (day <= periodLen) return 'menstruation';
-      if (day <= 13) return 'follicular';
-      if (day <= 16) return 'ovulation';
-      return 'luteal';
+      const day = differenceInDays(target, cycleStart) + 1;
+      return phaseForDay(day, sorted[i]);
     }
+  }
+
+  // Project forward from the last known cycle for dates beyond its tracked end
+  const last = sorted[sorted.length - 1];
+  const lastStart = parseISO(last.start_date);
+  if (target >= lastStart) {
+    const cycleLen = last.cycle_length ?? 28;
+    const day = (differenceInDays(target, lastStart) % cycleLen) + 1;
+    return phaseForDay(day, last);
   }
   return null;
 }
@@ -117,7 +131,7 @@ const PHASE_META: Record<string, { label: string; emoji: string; desc: string; t
   },
 };
 
-type Granularity = 'month' | 'year';
+type Granularity = 'Month' | 'Year';
 
 interface CycleInfo {
   dayNum: number;
@@ -280,11 +294,11 @@ export function CyclePage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [granularity, setGranularity] = useState<Granularity>('month');
+  const [granularity, setGranularity] = useState<Granularity>('Month');
   const [anchor, setAnchor] = useState<Date>(new Date());
 
   const getRange = useCallback((g: Granularity, d: Date): { start: string; end: string } => {
-    if (g === 'year') {
+    if (g === 'Year') {
       return { start: format(startOfYear(d), 'yyyy-MM-dd'), end: format(endOfYear(d), 'yyyy-MM-dd') };
     }
     return { start: format(startOfMonth(d), 'yyyy-MM-dd'), end: format(endOfMonth(d), 'yyyy-MM-dd') };
@@ -312,7 +326,7 @@ export function CyclePage() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      await sleepApi.sync(granularity === 'year' ? 365 : 60);
+      await sleepApi.sync(granularity === 'Year' ? 365 : 60);
       loadData(granularity, anchor);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sync failed');
@@ -321,19 +335,19 @@ export function CyclePage() {
     }
   };
 
-  const goBack = () => setAnchor((prev) => granularity === 'year' ? subMonths(prev, 12) : subMonths(prev, 1));
-  const goForward = () => setAnchor((prev) => granularity === 'year' ? addMonths(prev, 12) : addMonths(prev, 1));
+  const goBack = () => setAnchor((prev) => granularity === 'Year' ? subMonths(prev, 12) : subMonths(prev, 1));
+  const goForward = () => setAnchor((prev) => granularity === 'Year' ? addMonths(prev, 12) : addMonths(prev, 1));
   const goToNow = () => setAnchor(new Date());
 
-  const isCurrentPeriod = granularity === 'month'
+  const isCurrentPeriod = granularity === 'Month'
     ? isSameMonth(anchor, new Date())
     : anchor.getFullYear() === new Date().getFullYear();
 
-  const periodLabel = granularity === 'year' ? format(anchor, 'yyyy') : format(anchor, 'MMMM yyyy');
+  const periodLabel = granularity === 'Year' ? format(anchor, 'yyyy') : format(anchor, 'MMMM yyyy');
 
-  // Chart data: oldest first
-  const chartData = [...records].reverse().map((r) => ({
-    date: format(parseISO(r.date), granularity === 'year' ? 'd/M' : 'd'),
+  // Chart data: oldest first (records from API are already ascending)
+  const chartData = [...records].map((r) => ({
+    date: format(parseISO(r.date), granularity === 'Year' ? 'd/M' : 'd'),
     fullDate: format(parseISO(r.date), 'EEE d MMM'),
     Deep: +((r.deep_sleep_min ?? 0) / 60).toFixed(2),
     Light: +((r.light_sleep_min ?? 0) / 60).toFixed(2),
@@ -369,8 +383,8 @@ export function CyclePage() {
     return vals.length ? Math.max(...vals) : null;
   })();
 
-  // Sparkline data (last 7 days, oldest first)
-  const last7 = records.slice(0, 7).reverse();
+  // Sparkline data (last 7 days, oldest first — records are ascending)
+  const last7 = records.slice(-7);
   const sparkScore = last7.map((r) => r.sleep_score).filter((v): v is number => v != null);
   const sparkRhr = last7.map((r) => r.resting_hr).filter((v): v is number => v != null);
   const sparkSleep = last7.map((r) => r.total_sleep_min).filter((v): v is number => v != null);
@@ -445,11 +459,11 @@ export function CyclePage() {
 
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 bg-white/60 rounded-lg border border-white/50 p-0.5">
-            {(['month', 'year'] as const).map((g) => (
+            {(['Month', 'Year'] as const).map((g) => (
               <button
                 key={g}
                 onClick={() => setGranularity(g)}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium capitalize transition-colors ${
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
                   granularity === g ? 'bg-[var(--color-accent)] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
@@ -536,7 +550,7 @@ export function CyclePage() {
               <ComposedChart data={chartData} barCategoryGap="15%" margin={{ top: 5, right: 50, bottom: 0, left: -10 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis yAxisId="hours" tick={{ fontSize: 10 }} unit="h" axisLine={false} tickLine={false} domain={[0, 'dataMax + 1']} />
+                <YAxis yAxisId="hours" tick={{ fontSize: 10 }} unit="h" axisLine={false} tickLine={false} domain={[0, (max: number) => Math.ceil(max + 0.5)]} />
                 <YAxis yAxisId="score" orientation="right" domain={[0, 100]} tick={{ fontSize: 10 }} hide />
                 <Tooltip
                   contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e5e7eb' }}
@@ -646,7 +660,7 @@ export function CyclePage() {
         <Card>
           <div className="flex items-center gap-2 mb-2">
             <Heart size={14} className="text-rose-400" />
-            <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Nightly Details</h2>
+            <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Night Details</h2>
           </div>
           <div className="overflow-x-auto">
             <div className="overflow-y-auto max-h-[220px]">

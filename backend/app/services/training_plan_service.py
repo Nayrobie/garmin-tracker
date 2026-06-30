@@ -15,36 +15,31 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.config import TRAINING_RULES
-from app.models.workout import ActualWorkoutORM, PlannedWorkoutORM, RaceORM, WorkoutType
+from app.models.workout import (
+    ActualWorkoutORM,
+    PlannedWorkoutORM,
+    RaceORM,
+    UserSettingsORM,
+    WorkoutType,
+)
 
 
-# Pace targets (min/km) from user VMA profile
-PACE_EASY = "7:20"       # 75% VMA - basic endurance
-PACE_INTERVALS = "5:30"  # 100% VMA
-PACE_LONG = "6:30"       # 85% VMA - 10k pace
+def _get_settings(db: Session) -> UserSettingsORM:
+    """Return the singleton user settings row, creating it if missing.
 
-# Run distribution within weekly volume
-# Based on: mid(5k) + short(4k) + long(8k) = 17km -> 29%, 24%, 47%
-DIST_EASY = 0.29
-DIST_SHORT = 0.24
-DIST_LONG = 0.47
+    Args:
+        db: Database session.
 
-# Max long run distance (user preference: no more than 15km)
-MAX_LONG_RUN_KM = 15.0
-
-# Training epoch: Monday of the week of the first ever run (Jan 20, 2026)
-TRAINING_EPOCH = date(2026, 1, 19)
-
-# Default weekday assignments (0=Mon)
-DAY_EASY = 1       # Tuesday
-DAY_INTERVALS = 3  # Thursday
-DAY_LONG = 5       # Saturday
-
-# Complementary workout schedule
-DAY_STRENGTH = 0   # Monday
-DAY_MOBILITY_1 = 2  # Wednesday
-DAY_PILATES = 4     # Friday
+    Returns:
+        UserSettingsORM instance with current hyper-parameters.
+    """
+    settings = db.get(UserSettingsORM, 1)
+    if settings is None:
+        settings = UserSettingsORM(id=1)
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    return settings
 
 # Alternating strength focus areas (Monday, 30min)
 STRENGTH_WORKOUTS = [
@@ -308,7 +303,9 @@ def generate_training_plan(
         today = date.today()
         start_date = today - timedelta(days=today.weekday())  # Monday
 
-    max_increase_pct = TRAINING_RULES["max_weekly_volume_increase_percent"]
+    # Load all hyper-parameters from the DB settings row
+    s = _get_settings(db)
+    max_increase_pct = s.max_weekly_volume_increase_pct
     plan_group_id = f"plan-{uuid.uuid4()}"
 
     # Clear existing future plan workouts
@@ -331,36 +328,36 @@ def generate_training_plan(
 
         # Determine effective volume for this week
         if is_taper:
-            effective_volume = current_volume * TAPER_VOLUME_FACTOR
+            effective_volume = current_volume * s.taper_volume_factor
             week_label = "taper"
         elif is_race_week:
-            effective_volume = current_volume * TAPER_VOLUME_FACTOR
+            effective_volume = current_volume * s.taper_volume_factor
             week_label = "race"
         else:
             effective_volume = current_volume
             week_label = "normal"
 
         # Calculate run distances
-        easy_km = _round_half(effective_volume * DIST_EASY)
-        short_km = _round_half(effective_volume * DIST_SHORT)
-        long_km = _round_half(effective_volume * DIST_LONG)
+        easy_km = _round_half(effective_volume * s.dist_easy_pct)
+        short_km = _round_half(effective_volume * s.dist_short_pct)
+        long_km = _round_half(effective_volume * s.dist_long_pct)
 
         # Cap long run at max
-        if long_km > MAX_LONG_RUN_KM:
-            long_km = MAX_LONG_RUN_KM
+        if long_km > s.max_long_run_km:
+            long_km = s.max_long_run_km
 
         # Ensure total adds up (adjust long for rounding)
         target_total = _round_half(effective_volume)
         actual_total = easy_km + short_km + long_km
         if actual_total != target_total:
             long_km = _round_half(target_total - easy_km - short_km)
-            if long_km > MAX_LONG_RUN_KM:
-                long_km = MAX_LONG_RUN_KM
+            if long_km > s.max_long_run_km:
+                long_km = s.max_long_run_km
 
         # Alternate short run type: intervals on even weeks, easy on odd
         # (taper/race weeks are always easy)
         is_interval_week = (week_idx % 2 == 0) and not is_taper and not is_race_week
-        short_pace = PACE_INTERVALS if is_interval_week else PACE_EASY
+        short_pace = s.pace_intervals if is_interval_week else s.pace_easy
 
         if is_interval_week:
             interval_idx = (week_idx // 2) % len(INTERVAL_RUNS)
@@ -368,26 +365,26 @@ def generate_training_plan(
         elif is_taper:
             short_notes = (
                 f"EASY SHAKEOUT (taper week)\n"
-                f"Easy jog at {PACE_EASY}/km — {short_km}km\n"
+                f"Easy jog at {s.pace_easy}/km — {short_km}km\n"
                 f"Keep effort very light, legs fresh for race"
             )
         elif is_race_week:
             short_notes = (
                 f"PRE-RACE SHAKEOUT\n"
-                f"Easy jog at {PACE_EASY}/km — {short_km}km\n"
+                f"Easy jog at {s.pace_easy}/km — {short_km}km\n"
                 f"4-6 short strides at the end to activate legs"
             )
         else:
             short_notes = (
                 f"EASY RUN\n"
-                f"Steady pace at {PACE_EASY}/km — {short_km}km\n"
+                f"Steady pace at {s.pace_easy}/km — {short_km}km\n"
                 f"Zone 2 heart rate, conversational effort"
             )
 
         # --- Run workouts ---
         easy_notes = (
             f"EASY ENDURANCE RUN — {easy_km}km\n"
-            f"Pace: {PACE_EASY}/km (zone 2)\n"
+            f"Pace: {s.pace_easy}/km (zone 2)\n"
             f"Effort: conversational, nose-breathing"
         )
         if is_taper:
@@ -396,16 +393,16 @@ def generate_training_plan(
             easy_notes += "\n(Race week — just loosen the legs)"
 
         easy_workout = PlannedWorkoutORM(
-            date=week_monday + timedelta(days=DAY_EASY),
+            date=week_monday + timedelta(days=s.day_easy),
             type=WorkoutType.run,
-            goal_duration_min=_km_to_duration(easy_km, PACE_EASY),
-            goal_pace_per_km=PACE_EASY,
+            goal_duration_min=_km_to_duration(easy_km, s.pace_easy),
+            goal_pace_per_km=s.pace_easy,
             notes=easy_notes,
             recurrence="none",
             recurrence_group_id=plan_group_id,
         )
         short_workout = PlannedWorkoutORM(
-            date=week_monday + timedelta(days=DAY_INTERVALS),
+            date=week_monday + timedelta(days=s.day_intervals),
             type=WorkoutType.run,
             goal_duration_min=_km_to_duration(short_km, short_pace),
             goal_pace_per_km=short_pace,
@@ -418,20 +415,20 @@ def generate_training_plan(
         if not is_race_week:
             long_notes = (
                 f"LONG RUN — {long_km}km\n"
-                f"Pace: {PACE_LONG if not is_taper else PACE_EASY}/km\n"
+                f"Pace: {s.pace_long if not is_taper else s.pace_easy}/km\n"
                 f"Build distance steadily, negative split if feeling good"
             )
             if is_taper:
                 long_notes = (
                     f"LONG RUN (taper) — {long_km}km\n"
-                    f"Pace: {PACE_EASY}/km (easy)\n"
+                    f"Pace: {s.pace_easy}/km (easy)\n"
                     f"Shorter than usual — stay fresh for race day"
                 )
             long_workout = PlannedWorkoutORM(
-                date=week_monday + timedelta(days=DAY_LONG),
+                date=week_monday + timedelta(days=s.day_long),
                 type=WorkoutType.run,
-                goal_duration_min=_km_to_duration(long_km, PACE_LONG if not is_taper else PACE_EASY),
-                goal_pace_per_km=PACE_LONG if not is_taper else PACE_EASY,
+                goal_duration_min=_km_to_duration(long_km, s.pace_long if not is_taper else s.pace_easy),
+                goal_pace_per_km=s.pace_long if not is_taper else s.pace_easy,
                 notes=long_notes,
                 recurrence="none",
                 recurrence_group_id=plan_group_id,
@@ -440,46 +437,55 @@ def generate_training_plan(
         else:
             workouts_to_add.extend([easy_workout, short_workout])
 
-        # --- Complementary workouts ---
+        # --- Complementary workouts (strength ≥1, yoga/stretch ≥2, pilates ≥3) ---
+        n_comp = s.complementary_workouts_per_week
+        comp_summary = []
+        stretching_min = s.stretching_duration_min
+
         strength_idx = week_idx % len(STRENGTH_WORKOUTS)
         strength_info = STRENGTH_WORKOUTS[strength_idx]
         strength_workout = PlannedWorkoutORM(
-            date=week_monday + timedelta(days=DAY_STRENGTH),
+            date=week_monday + timedelta(days=s.day_strength),
             type=WorkoutType.strength,
-            goal_duration_min=strength_info["duration"],
+            goal_duration_min=s.strength_duration_min,
             notes=strength_info["notes"],
             recurrence="none",
             recurrence_group_id=plan_group_id,
         )
         workouts_to_add.append(strength_workout)
+        comp_summary.append({"type": "strength", "duration_min": s.strength_duration_min})
 
-        yoga_idx = week_idx % len(YOGA_WORKOUTS)
-        yoga_info = YOGA_WORKOUTS[yoga_idx]
-        yoga_workout = PlannedWorkoutORM(
-            date=week_monday + timedelta(days=DAY_MOBILITY_1),
-            type=WorkoutType.yoga,
-            goal_duration_min=yoga_info["duration"],
-            notes=yoga_info["notes"],
-            recurrence="none",
-            recurrence_group_id=plan_group_id,
-        )
-        workouts_to_add.append(yoga_workout)
+        if n_comp >= 2:
+            yoga_idx = week_idx % len(YOGA_WORKOUTS)
+            yoga_info = YOGA_WORKOUTS[yoga_idx]
+            yoga_workout = PlannedWorkoutORM(
+                date=week_monday + timedelta(days=s.day_mobility),
+                type=WorkoutType.yoga,
+                goal_duration_min=stretching_min,
+                notes=yoga_info["notes"],
+                recurrence="none",
+                recurrence_group_id=plan_group_id,
+            )
+            workouts_to_add.append(yoga_workout)
+            comp_summary.append({"type": "yoga", "duration_min": stretching_min})
 
-        pilates_idx = week_idx % len(PILATES_WORKOUTS)
-        pilates_info = PILATES_WORKOUTS[pilates_idx]
-        pilates_workout = PlannedWorkoutORM(
-            date=week_monday + timedelta(days=DAY_PILATES),
-            type=WorkoutType.pilates,
-            goal_duration_min=pilates_info["duration"],
-            notes=pilates_info["notes"],
-            recurrence="none",
-            recurrence_group_id=plan_group_id,
-        )
-        workouts_to_add.append(pilates_workout)
+        if n_comp >= 3:
+            pilates_idx = week_idx % len(PILATES_WORKOUTS)
+            pilates_info = PILATES_WORKOUTS[pilates_idx]
+            pilates_workout = PlannedWorkoutORM(
+                date=week_monday + timedelta(days=s.day_pilates),
+                type=WorkoutType.pilates,
+                goal_duration_min=stretching_min,
+                notes=pilates_info["notes"],
+                recurrence="none",
+                recurrence_group_id=plan_group_id,
+            )
+            workouts_to_add.append(pilates_workout)
+            comp_summary.append({"type": "pilates", "duration_min": pilates_info["duration"]})
 
         run_total = round(easy_km + short_km + (long_km if not is_race_week else 0), 1)
-        # Week number relative to training start (Jan 19, 2026 = W1)
-        abs_week_num = ((week_monday - TRAINING_EPOCH).days // 7) + 1
+        # Week number relative to training start
+        abs_week_num = ((week_monday - s.training_epoch).days // 7) + 1
         weeks_summary.append({
             "week": abs_week_num,
             "week_start": week_monday.isoformat(),
@@ -489,11 +495,7 @@ def generate_training_plan(
             "long_km": long_km if not is_race_week else 0,
             "is_interval_week": is_interval_week,
             "week_type": week_label,
-            "cross_training": [
-                {"type": "strength", "duration_min": strength_info["duration"]},
-                {"type": "yoga", "duration_min": yoga_info["duration"]},
-                {"type": "pilates", "duration_min": pilates_info["duration"]},
-            ],
+            "cross_training": comp_summary,
         })
 
         # Only increase volume on normal training weeks

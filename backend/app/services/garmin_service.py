@@ -234,7 +234,7 @@ def sync_garmin_activities(
         if sync_state and sync_state.last_sync_at:
             start_date = sync_state.last_sync_at.date() - timedelta(days=1)
         else:
-            start_date = end_date - timedelta(days=30)
+            start_date = end_date - timedelta(days=365)  # first-ever sync: pull 1 year of history
 
     try:
         client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)

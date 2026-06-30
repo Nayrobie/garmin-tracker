@@ -12,6 +12,8 @@ import type { Race, CreateRacePayload, RaceType } from '../../types';
 interface RaceManagerProps {
   open: boolean;
   onClose: () => void;
+  /** When true, renders the race list inline (no wrapping Modal). */
+  inline?: boolean;
 }
 
 const RACE_TYPES: { value: RaceType; label: string }[] = [
@@ -31,7 +33,7 @@ const emptyForm: CreateRacePayload = {
   type: 'trail',
 };
 
-export function RaceManager({ open, onClose }: RaceManagerProps) {
+export function RaceManager({ open, onClose, inline = false }: RaceManagerProps) {
   const { races, loading, createRace, updateRace, deleteRace } = useRaces();
 
   const [formOpen, setFormOpen] = useState(false);
@@ -92,20 +94,19 @@ export function RaceManager({ open, onClose }: RaceManagerProps) {
     }
   };
 
-  return (
-    <>
-      <Modal open={open} onClose={onClose} title="Races" maxWidth="max-w-xl">
-        <div className="space-y-3">
-          {loading ? (
-            <p className="text-sm text-gray-500">Loading…</p>
-          ) : races.length === 0 ? (
-            <p className="text-sm text-gray-500 italic">No races yet. Add your first one!</p>
-          ) : (
-            <ul className="space-y-2">
-              {races.map(race => (
-                <li
-                  key={race.id}
-                  className="flex items-center gap-3 p-3 rounded-xl bg-black/3 border border-black/5"
+  /** Shared race list + add button (rendered inline or inside modal). */
+  const raceListContent = (
+    <div className="space-y-3">
+      {loading ? (
+        <p className="text-sm text-gray-500">Loading…</p>
+      ) : races.length === 0 ? (
+        <p className="text-sm text-gray-500 italic">No races yet. Add your first one!</p>
+      ) : (
+        <ul className="space-y-2">
+          {races.map(race => (
+            <li
+              key={race.id}
+              className="flex items-center gap-3 p-3 rounded-xl bg-black/3 border border-black/5"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -168,103 +169,95 @@ export function RaceManager({ open, onClose }: RaceManagerProps) {
             Add race
           </Button>
         </div>
-      </Modal>
+  );
 
-      {/* Add / Edit form modal */}
-      <Modal
-        open={formOpen}
-        onClose={() => setFormOpen(false)}
-        title={editing ? 'Edit race' : 'Add race'}
-      >
-        <div className="space-y-4">
-          {error && (
-            <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
-          )}
-
-          <Field label="Race name *">
-            <input
-              type="text"
-              placeholder="e.g. Tignes Trail"
-              value={form.name}
-              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+  /** Shared add/edit form modal. */
+  const formModal = (
+    <Modal
+      open={formOpen}
+      onClose={() => setFormOpen(false)}
+      title={editing ? 'Edit race' : 'Add race'}
+    >
+      <div className="space-y-4">
+        {error && (
+          <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
+        )}
+        <Field label="Race name *">
+          <input type="text" placeholder="e.g. Tignes Trail"
+            value={form.name}
+            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            className={inputClass}
+          />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Date *">
+            <input type="date" value={form.date}
+              onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
               className={inputClass}
             />
           </Field>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Date *">
-              <input
-                type="date"
-                value={form.date}
-                onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
-                className={inputClass}
-              />
-            </Field>
-            <Field label="Type *">
-              <select
-                value={form.type}
-                onChange={e => setForm(f => ({ ...f, type: e.target.value as RaceType }))}
-                className={inputClass}
-              >
-                {RACE_TYPES.map(t => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Distance (km) *">
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                placeholder="12"
-                value={form.distance_km || ''}
-                onChange={e => setForm(f => ({ ...f, distance_km: parseFloat(e.target.value) || 0 }))}
-                className={inputClass}
-              />
-            </Field>
-            <Field label="Elevation (m)">
-              <input
-                type="number"
-                min="0"
-                step="10"
-                placeholder="700 (optional)"
-                value={form.elevation_m ?? ''}
-                onChange={e =>
-                  setForm(f => ({
-                    ...f,
-                    elevation_m: e.target.value ? parseInt(e.target.value) : null,
-                  }))
-                }
-                className={inputClass}
-              />
-            </Field>
-          </div>
-
-          <Field label="Place *">
-            <input
-              type="text"
-              placeholder="e.g. Tignes, France"
-              value={form.place}
-              onChange={e => setForm(f => ({ ...f, place: e.target.value }))}
+          <Field label="Type *">
+            <select value={form.type}
+              onChange={e => setForm(f => ({ ...f, type: e.target.value as RaceType }))}
               className={inputClass}
-            />
+            >
+              {RACE_TYPES.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
           </Field>
-
-          <div className="flex gap-2 pt-1">
-            <Button variant="primary" onClick={handleSave} loading={saving} className="flex-1">
-              {editing ? 'Save changes' : 'Add race'}
-            </Button>
-            <Button variant="ghost" onClick={() => setFormOpen(false)} disabled={saving}>
-              Cancel
-            </Button>
-          </div>
         </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Distance (km) *">
+            <input type="number" min="0" step="0.1" placeholder="12"
+              value={form.distance_km || ''}
+              onChange={e => setForm(f => ({ ...f, distance_km: parseFloat(e.target.value) || 0 }))}
+              className={inputClass}
+            />
+          </Field>
+          <Field label="Elevation (m)">
+            <input type="number" min="0" step="10" placeholder="700 (optional)"
+              value={form.elevation_m ?? ''}
+              onChange={e => setForm(f => ({ ...f, elevation_m: e.target.value ? parseInt(e.target.value) : null }))}
+              className={inputClass}
+            />
+          </Field>
+        </div>
+        <Field label="Place *">
+          <input type="text" placeholder="e.g. Tignes, France"
+            value={form.place}
+            onChange={e => setForm(f => ({ ...f, place: e.target.value }))}
+            className={inputClass}
+          />
+        </Field>
+        <div className="flex gap-2 pt-1">
+          <Button variant="primary" onClick={handleSave} loading={saving} className="flex-1">
+            {editing ? 'Save changes' : 'Add race'}
+          </Button>
+          <Button variant="ghost" onClick={() => setFormOpen(false)} disabled={saving}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+
+  if (inline) {
+    return (
+      <>
+        {raceListContent}
+        {formModal}
+      </>
+    );
+  }
+
+  // Default: wrapped in outer Modal (used from sidebar RaceCountdown etc.)
+  return (
+    <>
+      <Modal open={open} onClose={onClose} title="Races" maxWidth="max-w-xl">
+        {raceListContent}
       </Modal>
+      {formModal}
     </>
   );
 }

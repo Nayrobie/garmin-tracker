@@ -45,14 +45,26 @@ export function RunningStatsPanel() {
   }
   if (!stats) return null;
 
-  const chartData = stats.progression.map((p) => ({
-    period: granularity === 'monthly' ? p.period.slice(5) : p.period, // "06" or "2026"
-    fullPeriod: p.period,
-    km: p.total_km,
-    runs: p.run_count,
-    pace: p.avg_pace,
-    hr: p.avg_hr,
-  }));
+  const chartData = stats.progression.map((p) => {
+    let label: string;
+    if (granularity === 'monthly') {
+      // p.period is "YYYY-MM" → format as "Jan", "Feb", etc.
+      const [yr, mo] = p.period.split('-').map(Number);
+      const d = new Date(yr, mo - 1, 1);
+      // Always show year suffix for monthly labels for disambiguation
+      label = d.toLocaleString('default', { month: 'short', year: '2-digit' });
+    } else {
+      label = p.period; // "2025", "2026"
+    }
+    return {
+      period: label,
+      fullPeriod: p.period,
+      km: p.total_km,
+      runs: p.run_count,
+      pace: p.avg_pace,
+      hr: p.avg_hr,
+    };
+  });
 
   return (
     <Card className="space-y-5">
@@ -71,7 +83,7 @@ export function RunningStatsPanel() {
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            Yearly
+            Year
           </button>
           <button
             onClick={() => setGranularity('monthly')}
@@ -81,7 +93,7 @@ export function RunningStatsPanel() {
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            Monthly
+            Month
           </button>
         </div>
       </div>

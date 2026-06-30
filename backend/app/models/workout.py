@@ -260,6 +260,147 @@ class MenstrualCycleRead(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# User Settings ORM model (singleton row, id=1)
+# ---------------------------------------------------------------------------
+
+
+class UserSettingsORM(Base):
+    """Persisted user training hyper-parameters (single row, id=1)."""
+
+    __tablename__ = "user_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+
+    # Paces (min/km as "MM:SS")
+    pace_easy: Mapped[str] = mapped_column(String(10), default="7:20")
+    pace_intervals: Mapped[str] = mapped_column(String(10), default="5:30")
+    pace_long: Mapped[str] = mapped_column(String(10), default="6:30")
+
+    # Training volume
+    dist_easy_pct: Mapped[float] = mapped_column(Float, default=0.29)
+    dist_short_pct: Mapped[float] = mapped_column(Float, default=0.24)
+    dist_long_pct: Mapped[float] = mapped_column(Float, default=0.47)
+    max_long_run_km: Mapped[float] = mapped_column(Float, default=15.0)
+    max_weekly_volume_increase_pct: Mapped[int] = mapped_column(Integer, default=10)
+    min_runs_per_week: Mapped[int] = mapped_column(Integer, default=2)
+    max_runs_per_week: Mapped[int] = mapped_column(Integer, default=3)
+    taper_volume_factor: Mapped[float] = mapped_column(Float, default=0.6)
+    starting_volume_km: Mapped[float] = mapped_column(Float, default=12.0)
+
+    # Schedule (0=Mon … 6=Sun)
+    training_epoch: Mapped[DateType] = mapped_column(Date, default=DateType(2026, 1, 19))
+    day_easy: Mapped[int] = mapped_column(Integer, default=1)
+    day_intervals: Mapped[int] = mapped_column(Integer, default=3)
+    day_long: Mapped[int] = mapped_column(Integer, default=5)
+    day_strength: Mapped[int] = mapped_column(Integer, default=0)
+    day_mobility: Mapped[int] = mapped_column(Integer, default=2)
+    day_pilates: Mapped[int] = mapped_column(Integer, default=4)
+
+    # Workout durations
+    strength_sessions_per_week: Mapped[int] = mapped_column(Integer, default=2)
+    strength_duration_min: Mapped[int] = mapped_column(Integer, default=30)
+    yoga_duration_min: Mapped[int] = mapped_column(Integer, default=15)
+    pilates_duration_min: Mapped[int] = mapped_column(Integer, default=15)
+    stretching_duration_min: Mapped[int] = mapped_column(Integer, default=15)
+
+    # Sync & analysis
+    activity_sync_lookback_days: Mapped[int] = mapped_column(Integer, default=30)
+    sleep_sync_lookback_days: Mapped[int] = mapped_column(Integer, default=30)
+    cycle_sync_lookback_days: Mapped[int] = mapped_column(Integer, default=365)
+    hiking_pace_threshold_sec: Mapped[int] = mapped_column(Integer, default=720)
+
+    # Schedule extras
+    rest_day: Mapped[int] = mapped_column(Integer, default=6)  # 0=Mon … 6=Sun
+
+    # Complementary workout count (1=strength only, 2=+yoga, 3=+pilates)
+    complementary_workouts_per_week: Mapped[int] = mapped_column(Integer, default=3)
+
+    # Unified sync lookback for manual syncs (days)
+    sync_lookback_days: Mapped[int] = mapped_column(Integer, default=30)
+
+
+# ---------------------------------------------------------------------------
+# Pydantic schemas — User Settings
+# ---------------------------------------------------------------------------
+
+
+class UserSettingsRead(BaseModel):
+    """User settings response schema (all fields)."""
+
+    # Paces
+    pace_easy: str
+    pace_intervals: str
+    pace_long: str
+
+    # Training volume
+    dist_easy_pct: float
+    dist_short_pct: float
+    dist_long_pct: float
+    max_long_run_km: float
+    max_weekly_volume_increase_pct: int
+    min_runs_per_week: int
+    max_runs_per_week: int
+    taper_volume_factor: float
+    starting_volume_km: float
+
+    # Schedule
+    training_epoch: DateType
+    day_easy: int
+    day_intervals: int
+    day_long: int
+    day_strength: int
+    day_mobility: int
+    day_pilates: int
+
+    # Workout durations
+    strength_duration_min: int
+    stretching_duration_min: int
+
+    # Analysis
+    hiking_pace_threshold_sec: int
+
+    # Schedule extras
+    rest_day: int
+    complementary_workouts_per_week: int
+
+    model_config = {"from_attributes": True}
+
+
+class UserSettingsUpdate(BaseModel):
+    """Partial update schema — only supplied fields are changed."""
+
+    pace_easy: Optional[str] = None
+    pace_intervals: Optional[str] = None
+    pace_long: Optional[str] = None
+
+    dist_easy_pct: Optional[float] = None
+    dist_short_pct: Optional[float] = None
+    dist_long_pct: Optional[float] = None
+    max_long_run_km: Optional[float] = None
+    max_weekly_volume_increase_pct: Optional[int] = None
+    min_runs_per_week: Optional[int] = None
+    max_runs_per_week: Optional[int] = None
+    taper_volume_factor: Optional[float] = None
+    starting_volume_km: Optional[float] = None
+
+    training_epoch: Optional[DateType] = None
+    day_easy: Optional[int] = None
+    day_intervals: Optional[int] = None
+    day_long: Optional[int] = None
+    day_strength: Optional[int] = None
+    day_mobility: Optional[int] = None
+    day_pilates: Optional[int] = None
+
+    strength_duration_min: Optional[int] = None
+    stretching_duration_min: Optional[int] = None
+
+    hiking_pace_threshold_sec: Optional[int] = None
+
+    rest_day: Optional[int] = None
+    complementary_workouts_per_week: Optional[int] = None
+
+
+# ---------------------------------------------------------------------------
 # Pydantic schemas — PlannedWorkout
 # ---------------------------------------------------------------------------
 

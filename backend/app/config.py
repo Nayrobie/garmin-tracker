@@ -41,11 +41,6 @@ USER_PROFILE = {
     "training_goal": os.getenv("USER_TRAINING_GOAL", ""),
 }
 
-# Training constraints
-TRAINING_RULES = {
-    "min_runs_per_week": 2,
-    "max_runs_per_week": 3,
-    "max_weekly_volume_increase_percent": 10,
-    "strength_sessions_per_week": 2,
-    "strength_duration_minutes": 30,
-}
+# Training hyper-parameters are now stored in the `user_settings` DB table
+# and managed via the GET/PUT /api/settings endpoints.
+# See app/models/workout.py → UserSettingsORM for the full list of defaults.

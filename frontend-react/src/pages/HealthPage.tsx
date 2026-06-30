@@ -1,10 +1,10 @@
 /**
  * Health page: body composition trends from Feelfit import.
  * Charts weight, body fat %, muscle mass, and BMI over time.
- * Granularity: 1M (last 30 days), 1Y (last 12 months), All time.
+ * Granularity: Month (last 30 days), Year (all years since first log).
  */
 import { useEffect, useState } from 'react';
-import { format, subMonths, subYears } from 'date-fns';
+import { format, subMonths } from 'date-fns';
 import {
   LineChart,
   Line,
@@ -21,17 +21,17 @@ import type { BodyCompositionRecord } from '../types';
 
 // ── granularity ───────────────────────────────────────────────────────────────
 
-type Granularity = '1M' | '1Y' | 'all';
+type Granularity = 'All' | 'Month' | 'Year';
 
 function filterRecords(records: BodyCompositionRecord[], g: Granularity): BodyCompositionRecord[] {
-  if (g === 'all') return records;
+  if (g === 'All') return records;
   const now = new Date();
-  const cutoff = g === '1Y' ? subYears(now, 1) : subMonths(now, 1);
-  return records.filter((r) => new Date(r.measured_at) >= cutoff);
+  if (g === 'Year') return records.filter((r) => new Date(r.measured_at) >= subMonths(now, 12));
+  return records.filter((r) => new Date(r.measured_at) >= subMonths(now, 1));
 }
 
 function dateFormat(g: Granularity): string {
-  return g === '1M' ? 'd MMM' : "MMM ''yy";
+  return g === 'Month' ? 'd MMM' : "MMM ''yy";
 }
 
 // ── chart data ────────────────────────────────────────────────────────────────
@@ -97,9 +97,9 @@ function StatCard({ label, value, unit, delta, prevLabel }: {
 
 function GranularityBar({ value, onChange }: { value: Granularity; onChange: (g: Granularity) => void }) {
   const opts: { key: Granularity; label: string }[] = [
-    { key: '1M', label: '1M' },
-    { key: '1Y', label: '1Y' },
-    { key: 'all', label: 'All' },
+    { key: 'All', label: 'All' },
+    { key: 'Month', label: 'Month' },
+    { key: 'Year', label: 'Year' },
   ];
   return (
     <div className="flex gap-1 bg-white/60 rounded-lg border border-white/50 p-0.5">
@@ -129,13 +129,13 @@ function TrendChart({ data, dataKey, label, unit, color, referenceValue, granula
   referenceValue?: number;
   granularity: Granularity;
 }) {
-  const boundaries = granularity === 'all' ? yearBoundaries(data) : [];
+  const boundaries = (granularity === 'Year' || granularity === 'All') ? yearBoundaries(data) : [];
 
   return (
     <Card>
       <p className="text-sm font-medium text-gray-700 mb-3">{label}</p>
       <ResponsiveContainer width="100%" height={180}>
-        <LineChart data={data} margin={{ top: granularity === 'all' ? 18 : 4, right: 8, bottom: 0, left: -16 }}>
+          <LineChart data={data} margin={{ top: (granularity === 'Year' || granularity === 'All') ? 18 : 4, right: 8, bottom: 0, left: -16 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
           <XAxis
             dataKey="date"
@@ -182,7 +182,7 @@ export function HealthPage() {
   const [records, setRecords] = useState<BodyCompositionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [granularity, setGranularity] = useState<Granularity>('1Y');
+  const [granularity, setGranularity] = useState<Granularity>('Year');
 
   useEffect(() => {
     fetchBodyComposition()
@@ -229,9 +229,8 @@ export function HealthPage() {
         <GranularityBar value={granularity} onChange={setGranularity} />
       </div>
       <p className="text-sm text-gray-400 mb-6">
-        Body composition · {records.length} measurements ·{' '}
-        {records[0] ? format(new Date(records[0].measured_at), 'MMM yyyy') : ''} →{' '}
-        {latest ? format(new Date(latest.measured_at), 'MMM yyyy') : ''}
+        Body composition · {records.length} measurements · Last:{' '}
+        {latest ? format(new Date(latest.measured_at), 'MMM yyyy') : '—'}
       </p>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 mb-6">

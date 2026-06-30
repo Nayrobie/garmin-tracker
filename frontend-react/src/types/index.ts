@@ -190,3 +190,47 @@ export interface MenstrualCycle {
   fertile_window_length: number | null;
   is_predicted: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// User Settings
+// ---------------------------------------------------------------------------
+
+export interface UserSettings {
+  // Paces
+  pace_easy: string;
+  pace_intervals: string;
+  pace_long: string;
+
+  // Training volume
+  dist_easy_pct: number;
+  dist_short_pct: number;
+  dist_long_pct: number;
+  max_long_run_km: number;
+  max_weekly_volume_increase_pct: number;
+  min_runs_per_week: number;
+  max_runs_per_week: number;
+  taper_volume_factor: number;
+  starting_volume_km: number;
+
+  // Schedule (0=Mon … 6=Sun)
+  training_epoch: string; // "YYYY-MM-DD"
+  day_easy: number;
+  day_intervals: number;
+  day_long: number;
+  day_strength: number;
+  day_mobility: number;
+  day_pilates: number;
+
+  // Workout durations
+  strength_duration_min: number;
+  stretching_duration_min: number;
+
+  // Analysis
+  hiking_pace_threshold_sec: number;
+
+  // Schedule extras
+  rest_day: number;
+  complementary_workouts_per_week: number;
+}
+
+export type UserSettingsUpdate = Partial<UserSettings>;
