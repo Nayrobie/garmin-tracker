@@ -1,130 +1,111 @@
 # Garmin Workout Tracker
 
-A personal workout tracking application that connects to Garmin data to help manage and analyze training, with a focus on progressive running volume management and injury prevention.
+A personal running & health dashboard that syncs with Garmin Connect to track training, generate progressive workout plans, and correlate sleep and menstrual cycle data.
 
-## Overview
+## Features
 
-This project provides a unified interface to:
-- Pull workout data from Garmin Connect API
-- Track recovery metrics and injury prevention exercises
-- Monitor training volume progression (with 10% weekly increase limits)
-- Analyze physiological metrics (VO2 Max, lactate threshold, heart rate trends)
-- Log subjective effort (RPE) and session notes
+### Calendar
+- **Weekly strip** — view planned vs actual workouts day by day with completion status
+- **Training plan generation** — algorithmic plan respecting the 10% weekly volume rule, race taper, and your training goal
+- **Running progression chart** — monthly/yearly km bar chart (current year, Jan → now)
+- **Personal records** — best pace for 1k / 5k / 10k distances
 
-## Current Architecture
+### Health
+- **Body composition trends** — weight, body fat %, muscle mass, BMI from Feelfit CSV import
+- Granularity: All / Month / Year (last 12 months)
+
+### Cycle & Sleep
+- **Sleep duration & score chart** — stacked bar (Deep / Light / REM / Awake) + score overlay
+- **Resting HR chart** — with menstrual cycle phase bands
+- **Night details table** — per-night breakdown with HRV, RHR, sleep score, cycle phase
+- **Cycle tracker** — phase ring progress, timeline, next period prediction, phase detail cards
+- Month / Year navigation with Garmin sync
+
+### Settings
+- **Races** — inline add / edit / delete; training plan auto-tapers before race week
+- **Paces** — manual entry or auto-computed from VMA (75% easy · 85% long · 100% intervals)
+- **Training Goal** — four goal types with goal-specific parameters and plan behaviour:
+  - *Prepare for race* — pick a target race; max long run set to race distance − 5 km
+  - *Lower BPM* — enter goal avg BPM; plan runs zone-2 only, no intervals, no volume progression
+  - *Improve pace* — enter starting pace + target pace; plan includes tempo/interval work
+  - *Maintain* — no extra parameters; plan holds volume steady (0% weekly increase)
+- **Schedule** — training epoch, long run day, rest day
+- **Workouts** — complementary workouts per week (0–3): strength + soft workouts (yoga/mobility/stretching)
+
+## Architecture
 
 ```
 garmin-tracking-app/
-├── backend/          # Python FastAPI
-├── frontend-react/   # React + TypeScript (active development)
-├── notebooks/        # Jupyter notebooks for testing & exploration
-└── .github/          # Instructions & skills for Copilot
+├── backend/                  # Python FastAPI + SQLAlchemy + SQLite
+│   └── app/
+│       ├── main.py
+│       ├── config.py
+│       ├── database.py       # init + incremental migrations
+│       ├── api/routes.py     # all REST endpoints
+│       ├── models/workout.py # ORM + Pydantic schemas
+│       └── services/
+│           ├── garmin_service.py
+│           ├── training_plan_service.py
+│           └── body_composition_service.py
+├── frontend-react/           # React 18 + TypeScript + Vite + Tailwind
+│   └── src/
+│       ├── pages/            # Calendar, Health, Cycle, Settings
+│       ├── components/       # WorkoutCard, RaceManager, charts…
+│       ├── api/              # fetch wrappers per domain
+│       └── hooks/            # useRaces
+├── notebooks/                # Jupyter exploration
+└── .github/                  # Copilot instructions & skills
 ```
 
-**Status**: Backend API in development. React frontend scaffolded with race management UI. Testing via Jupyter notebooks.
+**Database**: SQLite at `backend/garmin_tracker.db` (single file, auto-migrated on startup).  
+**Proxy**: Vite proxies `/api/*` → `http://localhost:8000`.
 
-## Getting Started
+## Run Locally
 
 ### Prerequisites
+- Python 3.10+, [Poetry](https://python-poetry.org/)
+- Node 18+
 
-- Python 3.10+
-- Garmin Connect account
-- Optional: Google Sheets integration for extended tracking
-
-### Backend Setup
-
+### Backend
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-Set up environment variables (copy `.env.example` → `.env`):
-```bash
-cp .env.example .env
-```
-
-Then edit `.env` with your Garmin credentials and Garmin Connect API settings.
-
-### Frontend Setup
-
-**React:**
-```bash
-cd frontend-react
-npm install
-```
-
-### Run Locally
-
-**Terminal 1 — Backend**:
-```bash
-cd backend
-poetry run uvicorn app.main:app --reload
+poetry install
+cp .env.example .env      # add Garmin credentials if syncing real data
+poetry run uvicorn app.main:app --reload --port 8000
 # → http://localhost:8000
 ```
 
-**Terminal 2 — React Frontend**:
+### Frontend
 ```bash
 cd frontend-react
+npm install
 npm run dev
 # → http://localhost:5173
 ```
 
-## Development
+## Key API Endpoints
 
-See [.github/copilot-instructions.md](.github/copilot-instructions.md) for full development context, including:
-- Local-first workflow
-- Code standards (PEP8, type hints)
-- Never commit without explicit approval
-- Never modify `pyproject.toml` directly; use `poetry add/remove`
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/schedule` | Planned + actual workouts for a date range |
+| POST | `/api/schedule/generate-plan` | Generate multi-week training plan |
+| POST | `/api/schedule/adjust-plan` | Regenerate from current week's actual volume |
+| GET | `/api/stats/running` | Running progression (`?granularity=monthly\|yearly`) |
+| GET/PUT | `/api/settings` | User settings (paces, goal, schedule, workouts) |
+| GET | `/api/races` | All races |
+| GET | `/api/sleep` | Sleep records for a date range |
+| GET | `/api/cycles` | Menstrual cycle records |
+| POST | `/api/sleep/sync` | Incremental sync from Garmin |
+| GET | `/api/body-composition` | Body composition records |
 
-## Project Context
+## Development Guidelines
 
-### Physiological Profile
-
-- **Demographics**: 26-year-old female, 59 kg
-- **VO2 Max**: ~45 ml/kg/min
-- **Lactate Threshold**: 186 bpm, 5:30 min/km pace, 256W, 4.34 W/kg
-- **VMA**: 12 km/h (dictates training paces)
-- **Current Goal**: Lower heart rate while maintaining pace; prepare for semi-marathon (Oct 25)
-
-### Training Structure
-
-- **Frequency**: 2–3 runs per week
-- **Pattern**: Alternate interval runs with easy runs every other week
-- **Volume**: Building to 5k (short) + 4k (mid) + 8k (long) = 17 km/week
-- **Rule**: Max 10% volume increase per week
-- **Cross-training**: Incorporating cycling; 2 x 30min/week strength & plyometrics (hip/knee/shin splint prevention)
-
-### Tracked Metrics
-
-- Post-run notes from Garmin (RPE, perceived effort)
-- Recovery status
-- Injury prevention check-ins
-- Weekly volume totals and long-run progression
-- Heart rate zones and aerobic/anaerobic balance
-
-## Future Enhancements
-
-- iOS native app (React Native or Swift)
-- Real-time push notifications for anomalies
-- Video/form analysis integration
-- Google Sheets integration for collaborative analysis
-- Power meter integration
-
-## Development Workflow
-
-- **Build incrementally**: Start with mock data, then integrate real Garmin API
-- **Keep it lean**: Only add features with clear immediate use cases
-- **Code standards**: Follow PEP8; see [instructions](./github/instructions/) for details
+See [.github/copilot-instructions.md](.github/copilot-instructions.md) for full rules:
+- **Local-first**: always test before generalising
+- **Never commit/push** without explicit approval
+- **Dependencies**: use `poetry add / poetry remove`, never edit `pyproject.toml` directly
+- **Code style**: PEP8, type hints, docstrings per [python-docstrings instructions](.github/instructions/python-docstrings.instructions.md)
 
 ## License
 
 Personal project — use as reference only.
-
-## References
-
-- [Garmin Health API Docs](https://developer.garmin.com/)
-- Training structure based on aerobic base-building principles
-- See `.github/copilot-instructions.md` for development context
