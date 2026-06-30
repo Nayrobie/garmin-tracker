@@ -1,12 +1,13 @@
 /**
  * Settings page: user-configurable hyper-parameters persisted in the database,
- * organised into grouped sections (races, paces, volume, schedule, durations, sync).
+ * organised into grouped sections (races, paces, goal, schedule, workouts).
  */
 import { useEffect, useState, useCallback } from 'react';
-import { Check, Loader2 } from 'lucide-react';
+import { Check, Loader2, Zap } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { RaceManager } from '../components/races/RaceManager';
+import { useRaces } from '../hooks/useRaces';
 import { settingsApi } from '../api/settings';
 import type { UserSettings, UserSettingsUpdate } from '../types';
 
@@ -59,10 +60,20 @@ export function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
 
+  // VMA calculator local state
+  const [vmaInput, setVmaInput] = useState<string>('');
+  const [paceMode, setPaceMode] = useState<'auto' | 'manual'>('manual');
+
+  const { races } = useRaces();
+
   const load = useCallback(async () => {
     try {
       const data = await settingsApi.get();
       setSettings(data);
+      if (data.vma_kmh) {
+        setVmaInput(String(data.vma_kmh));
+        setPaceMode('auto');
+      }
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings');
@@ -88,6 +99,26 @@ export function SettingsPage() {
   const update = (field: keyof UserSettings, value: UserSettings[keyof UserSettings]) => {
     if (!settings) return;
     setSettings({ ...settings, [field]: value });
+  };
+
+  /** Convert VMA (km/h) + percentage to pace string "MM:SS". */
+  const vmaToPace = (vma: number, pct: number): string => {
+    const minPerKm = 60 / (pct * vma);
+    const mins = Math.floor(minPerKm);
+    const secs = Math.round((minPerKm - mins) * 60);
+    return `${mins}:${String(secs).padStart(2, '0')}`;
+  };
+
+  const applyVma = (vmaStr: string) => {
+    const vma = parseFloat(vmaStr);
+    if (!vma || vma <= 0 || !settings) return;
+    setSettings({
+      ...settings,
+      vma_kmh: vma,
+      pace_easy: vmaToPace(vma, 0.75),
+      pace_long: vmaToPace(vma, 0.85),
+      pace_intervals: vmaToPace(vma, 1.0),
+    });
   };
 
   if (loading) {
@@ -129,15 +160,69 @@ export function SettingsPage() {
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-gray-700 tracking-wide uppercase">Paces</h2>
-          <SaveButton
-            state={saveStates['paces'] ?? 'idle'}
-            onClick={() => saveSection('paces', {
-              pace_easy: settings.pace_easy,
-              pace_intervals: settings.pace_intervals,
-              pace_long: settings.pace_long,
-            })}
-          />
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-white/60 rounded-lg border border-white/50 p-0.5">
+              <button
+                type="button"
+                onClick={() => setPaceMode('auto')}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                  paceMode === 'auto' ? 'bg-[var(--color-accent)] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                From VMA
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaceMode('manual')}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                  paceMode === 'manual' ? 'bg-[var(--color-accent)] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Manual
+              </button>
+            </div>
+            <SaveButton
+              state={saveStates['paces'] ?? 'idle'}
+              onClick={() => saveSection('paces', {
+                pace_easy: settings.pace_easy,
+                pace_intervals: settings.pace_intervals,
+                pace_long: settings.pace_long,
+                vma_kmh: settings.vma_kmh,
+              })}
+            />
+          </div>
         </div>
+
+        {paceMode === 'auto' && (
+          <div className="flex items-end gap-3 mb-4 p-3 rounded-xl bg-[var(--color-accent-light)] border border-[var(--color-accent)]/20">
+            <Field label="VMA (km/h)" hint="Vitesse Maximale Aérobie">
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min="6"
+                  max="25"
+                  step="0.1"
+                  placeholder="e.g. 11"
+                  value={vmaInput}
+                  onChange={e => setVmaInput(e.target.value)}
+                  className={inputClass + ' w-28'}
+                />
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => applyVma(vmaInput)}
+                >
+                  <Zap size={13} />
+                  Compute
+                </Button>
+              </div>
+            </Field>
+            <p className="text-[10px] text-[var(--color-accent)] pb-2 leading-tight">
+              Easy = 75% · Long = 85% · Intervals = 100%
+            </p>
+          </div>
+        )}
+
         <div className="grid grid-cols-3 gap-4">
           <Field label="Easy pace (min/km)" hint="Zone 2 — 75% VMA">
             <input
@@ -145,16 +230,8 @@ export function SettingsPage() {
               placeholder="e.g. 7:30"
               value={settings.pace_easy}
               onChange={e => update('pace_easy', e.target.value)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Interval pace (min/km)" hint="100% VMA — max aerobic effort">
-            <input
-              type="text"
-              placeholder="e.g. 5:00"
-              value={settings.pace_intervals}
-              onChange={e => update('pace_intervals', e.target.value)}
-              className={inputClass}
+              disabled={paceMode === 'auto'}
+              className={inputClass + (paceMode === 'auto' ? ' opacity-60 cursor-not-allowed' : '')}
             />
           </Field>
           <Field label="Long run pace (min/km)" hint="85% VMA — 10k race pace">
@@ -163,79 +240,112 @@ export function SettingsPage() {
               placeholder="e.g. 6:00"
               value={settings.pace_long}
               onChange={e => update('pace_long', e.target.value)}
-              className={inputClass}
+              disabled={paceMode === 'auto'}
+              className={inputClass + (paceMode === 'auto' ? ' opacity-60 cursor-not-allowed' : '')}
+            />
+          </Field>
+          <Field label="Interval pace (min/km)" hint="100% VMA — max aerobic effort">
+            <input
+              type="text"
+              placeholder="e.g. 5:00"
+              value={settings.pace_intervals}
+              onChange={e => update('pace_intervals', e.target.value)}
+              disabled={paceMode === 'auto'}
+              className={inputClass + (paceMode === 'auto' ? ' opacity-60 cursor-not-allowed' : '')}
             />
           </Field>
         </div>
       </Card>
 
-      {/* ── Training Volume ── */}
+      {/* ── Training Goal ── */}
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-gray-700 tracking-wide uppercase">Training Volume</h2>
+          <h2 className="text-sm font-semibold text-gray-700 tracking-wide uppercase">Training Goal</h2>
           <SaveButton
-            state={saveStates['volume'] ?? 'idle'}
-            onClick={() => saveSection('volume', {
-              dist_easy_pct: settings.dist_easy_pct,
-              dist_short_pct: settings.dist_short_pct,
-              dist_long_pct: settings.dist_long_pct,
+            state={saveStates['goal'] ?? 'idle'}
+            onClick={() => saveSection('goal', {
+              training_goal: settings.training_goal,
               max_long_run_km: settings.max_long_run_km,
               max_weekly_volume_increase_pct: settings.max_weekly_volume_increase_pct,
-              taper_volume_factor: settings.taper_volume_factor,
               starting_volume_km: settings.starting_volume_km,
             })}
           />
         </div>
+
+        {/* Goal selector */}
+        <div className="flex gap-2 mb-5 flex-wrap">
+          {([
+            { key: 'prepare_race', label: 'Prepare for race' },
+            { key: 'lower_hr', label: 'Lower HR' },
+            { key: 'improve_pace', label: 'Improve pace' },
+            { key: 'maintain', label: 'Maintain' },
+          ] as const).map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => update('training_goal', key)}
+              className={[
+                'px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors',
+                settings.training_goal === key
+                  ? 'bg-[var(--color-accent)] text-white border-transparent'
+                  : 'bg-white/70 text-gray-600 border-black/10 hover:bg-white',
+              ].join(' ')}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Race selector — only for prepare_race */}
+        {settings.training_goal === 'prepare_race' && (
+          <div className="mb-4 p-3 rounded-xl bg-indigo-50/60 border border-indigo-100">
+            <Field label="Target race" hint="Max long run auto-set to race distance − 5 km">
+              <select
+                className={inputClass}
+                defaultValue=""
+                onChange={e => {
+                  const race = races.find(r => String(r.id) === e.target.value);
+                  if (race) {
+                    update('max_long_run_km', Math.max(5, race.distance_km - 5));
+                  }
+                }}
+              >
+                <option value="" disabled>Select a race…</option>
+                {races.map(r => (
+                  <option key={r.id} value={r.id}>
+                    {r.name} — {r.distance_km} km ({r.date})
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        )}
+
+        {/* Volume controls */}
         <div className="grid grid-cols-3 gap-4">
-          <Field label="Easy run %" hint="Proportion of weekly volume">
-            <input type="number" min="0" max="1" step="0.01"
-              value={settings.dist_easy_pct}
-              onChange={e => update('dist_easy_pct', parseFloat(e.target.value) || 0)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Short run %" hint="Proportion of weekly volume">
-            <input type="number" min="0" max="1" step="0.01"
-              value={settings.dist_short_pct}
-              onChange={e => update('dist_short_pct', parseFloat(e.target.value) || 0)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Long run %" hint="Proportion of weekly volume">
-            <input type="number" min="0" max="1" step="0.01"
-              value={settings.dist_long_pct}
-              onChange={e => update('dist_long_pct', parseFloat(e.target.value) || 0)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Max long run (km)">
+          <Field label="Max long run (km)" hint={settings.training_goal === 'prepare_race' ? 'Set by race selection' : undefined}>
             <input type="number" min="1" step="0.5"
               value={settings.max_long_run_km}
               onChange={e => update('max_long_run_km', parseFloat(e.target.value) || 0)}
               className={inputClass}
             />
           </Field>
-          <Field label="Max weekly increase %" hint="10% rule">
+          <Field label="Max weekly increase %" hint="10% rule — avoid injury">
             <input type="number" min="0" max="50" step="1"
               value={settings.max_weekly_volume_increase_pct}
               onChange={e => update('max_weekly_volume_increase_pct', parseInt(e.target.value) || 0)}
               className={inputClass}
             />
           </Field>
-          <Field label="Starting volume (km)" hint="Week 1 total distance">
-            <input type="number" min="1" step="0.5"
-              value={settings.starting_volume_km}
-              onChange={e => update('starting_volume_km', parseFloat(e.target.value) || 0)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Taper factor" hint="Volume multiplier for taper weeks">
-            <input type="number" min="0.1" max="1" step="0.05"
-              value={settings.taper_volume_factor}
-              onChange={e => update('taper_volume_factor', parseFloat(e.target.value) || 0.6)}
-              className={inputClass}
-            />
-          </Field>
+          {settings.training_goal !== 'maintain' && (
+            <Field label="Starting volume (km)" hint="Week 1 total distance">
+              <input type="number" min="1" step="0.5"
+                value={settings.starting_volume_km}
+                onChange={e => update('starting_volume_km', parseFloat(e.target.value) || 0)}
+                className={inputClass}
+              />
+            </Field>
+          )}
         </div>
       </Card>
 
@@ -282,45 +392,26 @@ export function SettingsPage() {
             state={saveStates['durations'] ?? 'idle'}
             onClick={() => saveSection('durations', {
               complementary_workouts_per_week: settings.complementary_workouts_per_week,
-              strength_duration_min: settings.strength_duration_min,
-              stretching_duration_min: settings.stretching_duration_min,
             })}
           />
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <Field
-            label="Complementary workouts / week"
-            hint="1 = strength only · 2 = + stretching"
-          >
-            <div className="flex gap-2 mt-1">
-              {[1, 2].map(n => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => update('complementary_workouts_per_week', n)}
-                  className={segmentClass(settings.complementary_workouts_per_week === n)}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </Field>
-          <div /> {/* spacer */}
-          <Field label="Strength workout duration (min)">
-            <input type="number" min="5" step="5"
-              value={settings.strength_duration_min}
-              onChange={e => update('strength_duration_min', parseInt(e.target.value) || 30)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Stretching workout duration (min)">
-            <input type="number" min="5" step="5"
-              value={settings.stretching_duration_min}
-              onChange={e => update('stretching_duration_min', parseInt(e.target.value) || 15)}
-              className={inputClass}
-            />
-          </Field>
-        </div>
+        <Field
+          label="Complementary workouts per week"
+          hint="The plan schedules 1 strength + soft workouts (yoga, mobility, stretching) to fill the rest"
+        >
+          <div className="flex gap-2 mt-1">
+            {[0, 1, 2, 3].map(n => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => update('complementary_workouts_per_week', n)}
+                className={segmentClass(settings.complementary_workouts_per_week === n)}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </Field>
       </Card>
     </div>
   );

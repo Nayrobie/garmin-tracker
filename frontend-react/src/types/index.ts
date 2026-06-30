@@ -200,8 +200,9 @@ export interface UserSettings {
   pace_easy: string;
   pace_intervals: string;
   pace_long: string;
+  vma_kmh: number | null;
 
-  // Training volume
+  // Training volume (used by plan generator, not all shown in UI)
   dist_easy_pct: number;
   dist_short_pct: number;
   dist_long_pct: number;
@@ -211,6 +212,9 @@ export interface UserSettings {
   max_runs_per_week: number;
   taper_volume_factor: number;
   starting_volume_km: number;
+
+  // Training goal
+  training_goal: string;
 
   // Schedule (0=Mon … 6=Sun)
   training_epoch: string; // "YYYY-MM-DD"

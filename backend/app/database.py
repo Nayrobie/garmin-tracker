@@ -52,6 +52,8 @@ def _migrate_user_settings() -> None:
         ("complementary_workouts_per_week", "INTEGER DEFAULT 3"),
         ("sync_lookback_days", "INTEGER DEFAULT 30"),
         ("stretching_duration_min", "INTEGER DEFAULT 15"),
+        ("training_goal", "TEXT DEFAULT 'prepare_race'"),
+        ("vma_kmh", "REAL"),
     ]
     with engine.connect() as conn:
         for col_name, col_def in new_columns:

@@ -318,6 +318,12 @@ class UserSettingsORM(Base):
     # Unified sync lookback for manual syncs (days)
     sync_lookback_days: Mapped[int] = mapped_column(Integer, default=30)
 
+    # Training goal: 'prepare_race' | 'lower_hr' | 'improve_pace' | 'maintain'
+    training_goal: Mapped[str] = mapped_column(String(32), default="prepare_race")
+
+    # VMA (Vitesse Maximale Aérobie) in km/h — used to auto-compute paces
+    vma_kmh: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+
 
 # ---------------------------------------------------------------------------
 # Pydantic schemas — User Settings
@@ -363,6 +369,10 @@ class UserSettingsRead(BaseModel):
     rest_day: int
     complementary_workouts_per_week: int
 
+    # Training goal
+    training_goal: str
+    vma_kmh: Optional[float]
+
     model_config = {"from_attributes": True}
 
 
@@ -398,6 +408,9 @@ class UserSettingsUpdate(BaseModel):
 
     rest_day: Optional[int] = None
     complementary_workouts_per_week: Optional[int] = None
+
+    training_goal: Optional[str] = None
+    vma_kmh: Optional[float] = None
 
 
 # ---------------------------------------------------------------------------
