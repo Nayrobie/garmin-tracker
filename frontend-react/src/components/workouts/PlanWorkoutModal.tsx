@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
+import { DatePicker } from '../ui/DatePicker';
 import type { CreatePlannedWorkoutPayload, PlannedWorkout, Recurrence, WorkoutType } from '../../types';
 
 const WORKOUT_TYPES: { value: WorkoutType; label: string }[] = [
@@ -108,8 +109,7 @@ export function PlanWorkoutModal({ open, onClose, initialWorkout, initialDate, o
         {/* Date */}
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Date</label>
-          <input type="date" value={form.date} onChange={(e) => set('date', e.target.value)} required
-            className="w-full rounded-lg border border-gray-200 bg-white/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent" />
+          <DatePicker value={form.date} onChange={v => set('date', v)} required />
         </div>
 
         {/* Type */}

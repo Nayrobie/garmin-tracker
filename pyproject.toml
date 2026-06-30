@@ -3,7 +3,7 @@ name = "garmin-tracking-app"
 version = "0.1.0"
 description = ""
 authors = [
-    {name = "Yonah"}
+    {name = "Your Name"}
 ]
 readme = "README.md"
 requires-python = ">=3.13"

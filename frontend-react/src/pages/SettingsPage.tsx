@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Check, Loader2, Zap } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { DatePicker } from '../components/ui/DatePicker';
 import { RaceManager } from '../components/races/RaceManager';
 import { useRaces } from '../hooks/useRaces';
 import { settingsApi } from '../api/settings';
@@ -404,11 +405,9 @@ export function SettingsPage() {
         </div>
         <div className="grid grid-cols-3 gap-4">
           <Field label="Training epoch" hint="Monday of first training week (W1)">
-            <input
-              type="date"
+            <DatePicker
               value={settings.training_epoch}
-              onChange={e => update('training_epoch', e.target.value)}
-              className={inputClass}
+              onChange={v => update('training_epoch', v)}
             />
           </Field>
           <DaySelect

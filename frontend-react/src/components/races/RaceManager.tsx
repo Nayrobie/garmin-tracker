@@ -6,6 +6,7 @@ import { format, parseISO } from 'date-fns';
 import { Plus, Pencil, Trash2, Mountain, MapPin } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
+import { DatePicker } from '../ui/DatePicker';
 import { useRaces } from '../../hooks/useRaces';
 import type { Race, CreateRacePayload, RaceType } from '../../types';
 
@@ -183,7 +184,7 @@ export function RaceManager({ open, onClose, inline = false }: RaceManagerProps)
           <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
         )}
         <Field label="Race name *">
-          <input type="text" placeholder="e.g. Tignes Trail"
+          <input type="text" placeholder="e.g. City Half Marathon"
             value={form.name}
             onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
             className={inputClass}
@@ -191,9 +192,10 @@ export function RaceManager({ open, onClose, inline = false }: RaceManagerProps)
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Date *">
-            <input type="date" value={form.date}
-              onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
-              className={inputClass}
+            <DatePicker
+              value={form.date}
+              onChange={v => setForm(f => ({ ...f, date: v }))}
+              required
             />
           </Field>
           <Field label="Type *">
@@ -224,7 +226,7 @@ export function RaceManager({ open, onClose, inline = false }: RaceManagerProps)
           </Field>
         </div>
         <Field label="Place *">
-          <input type="text" placeholder="e.g. Tignes, France"
+          <input type="text" placeholder="e.g. Paris, France"
             value={form.place}
             onChange={e => setForm(f => ({ ...f, place: e.target.value }))}
             className={inputClass}

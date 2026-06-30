@@ -2,6 +2,7 @@
  * Global stylesheet: applies design system (colours, fonts, shadows, spacing) everywhere on the app.
  */
 @import "tailwindcss";
+@import "react-day-picker/style.css";
 
 @theme {
   --font-sans: 'Inter', system-ui, sans-serif;
@@ -51,3 +52,20 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: oklch(0.7 0.01 264 / 0.5); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: oklch(0.6 0.01 264 / 0.7); }
+
+/* react-day-picker overrides — match app typography & design */
+.rdp-root {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  --rdp-accent-color: oklch(0.55 0.22 264);
+  --rdp-accent-background-color: oklch(0.93 0.05 264);
+  --rdp-day-height: 1.625rem;
+  --rdp-day-width: 1.625rem;
+  --rdp-day_button-height: 1.5rem;
+  --rdp-day_button-width: 1.5rem;
+  --rdp-selected-border: none;
+}
+.rdp-caption_label { font-weight: 600; font-size: 0.75rem; letter-spacing: -0.01em; }
+.rdp-weekday { font-size: 0.6rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+.rdp-day_button { transition: background-color 0.15s, color 0.15s; font-size: 0.7rem; font-weight: 400; }
+.rdp-selected .rdp-day_button { font-weight: 400; }
