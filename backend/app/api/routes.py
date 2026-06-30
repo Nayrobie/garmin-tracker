@@ -27,9 +27,18 @@ from app.models.workout import (
     RunningStats,
     PersonalRecord,
     WorkoutType,
+    SleepRecordORM,
+    SleepRecordRead,
+    MenstrualCycleORM,
+    MenstrualCycleRead,
 )
 from app.services.body_composition_service import BodyCompositionRecord, load_body_composition
-from app.services.garmin_service import sync_garmin_activities
+from app.services.garmin_service import (
+    sync_garmin_activities,
+    sync_garmin_sleep,
+    sync_hrv_and_cycle_day,
+    sync_menstrual_cycles,
+)
 from app.config import TRAINING_RULES
 
 router = APIRouter(prefix="/api")
@@ -529,4 +538,102 @@ def get_running_stats(
         personal_records=personal_records,
         total_activities=total_activities,
     )
+
+
+# ---------------------------------------------------------------------------
+# Sleep
+# ---------------------------------------------------------------------------
+
+
+@router.get("/sleep", response_model=List[SleepRecordRead])
+def get_sleep_records(
+    start: str, end: str, db: Session = Depends(get_db)
+) -> list[SleepRecordORM]:
+    """Return sleep records for a date range.
+
+    Args:
+        start: ISO date string (inclusive).
+        end: ISO date string (inclusive).
+        db: Database session.
+
+    Returns:
+        List of sleep records ordered by date.
+    """
+    return (
+        db.query(SleepRecordORM)
+        .filter(SleepRecordORM.date >= start, SleepRecordORM.date <= end)
+        .order_by(SleepRecordORM.date)
+        .all()
+    )
+
+
+@router.post("/sleep/sync")
+def sync_sleep(days_back: int = 30, db: Session = Depends(get_db)) -> dict:
+    """Trigger a Garmin sleep data sync.
+
+    Args:
+        days_back: Number of days to sync.
+        db: Database session.
+
+    Returns:
+        Dict with synced count and optional error.
+    """
+    result = sync_garmin_sleep(db, days_back=days_back)
+    # Also enrich with HRV + cycle data after syncing sleep
+    enrich_result = sync_hrv_and_cycle_day(db, days_back=days_back)
+    return {
+        "synced": result.get("synced", 0),
+        "enriched": enrich_result.get("enriched", 0),
+        "error": result.get("error") or enrich_result.get("error"),
+    }
+
+
+@router.post("/sleep/enrich")
+def enrich_sleep(days_back: int = 30, db: Session = Depends(get_db)) -> dict:
+    """Enrich sleep records with HRV and cycle day/phase.
+
+    Args:
+        days_back: Number of days to enrich.
+        db: Database session.
+
+    Returns:
+        Dict with enriched count and optional error.
+    """
+    return sync_hrv_and_cycle_day(db, days_back=days_back)
+
+
+# ---------------------------------------------------------------------------
+# Menstrual Cycles
+# ---------------------------------------------------------------------------
+
+
+@router.get("/cycles", response_model=List[MenstrualCycleRead])
+def get_cycles(db: Session = Depends(get_db)) -> list[MenstrualCycleORM]:
+    """Return all menstrual cycles ordered by start date.
+
+    Args:
+        db: Database session.
+
+    Returns:
+        List of menstrual cycles.
+    """
+    return (
+        db.query(MenstrualCycleORM)
+        .order_by(MenstrualCycleORM.start_date)
+        .all()
+    )
+
+
+@router.post("/cycles/sync")
+def sync_cycles(days_back: int = 365, db: Session = Depends(get_db)) -> dict:
+    """Trigger a Garmin menstrual cycle sync.
+
+    Args:
+        days_back: How far back to sync.
+        db: Database session.
+
+    Returns:
+        Dict with synced count and optional error.
+    """
+    return sync_menstrual_cycles(db, days_back=days_back)
 
