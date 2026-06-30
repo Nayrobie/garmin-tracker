@@ -305,7 +305,21 @@ def generate_training_plan(
 
     # Load all hyper-parameters from the DB settings row
     s = _get_settings(db)
-    max_increase_pct = s.max_weekly_volume_increase_pct
+    training_goal = getattr(s, 'training_goal', 'prepare_race') or 'prepare_race'
+    goal_hr = getattr(s, 'goal_hr_avg_bpm', None)
+    goal_pace_start = getattr(s, 'goal_pace_start', None)
+    goal_pace_target = getattr(s, 'goal_pace_target', None)
+
+    # Goal-driven overrides
+    # lower_bpm: no intervals, no volume progression — pure aerobic base building
+    # improve_pace: keep intervals, include pace targets in notes
+    # maintain: no volume increase
+    # prepare_race: default behaviour (race taper, long run cap)
+    if training_goal == 'maintain':
+        max_increase_pct = 0
+    else:
+        max_increase_pct = s.max_weekly_volume_increase_pct
+
     plan_group_id = f"plan-{uuid.uuid4()}"
 
     # Clear existing future plan workouts
@@ -355,13 +369,21 @@ def generate_training_plan(
                 long_km = s.max_long_run_km
 
         # Alternate short run type: intervals on even weeks, easy on odd
-        # (taper/race weeks are always easy)
-        is_interval_week = (week_idx % 2 == 0) and not is_taper and not is_race_week
+        # (taper/race weeks are always easy; lower_bpm never does intervals)
+        is_interval_week = (
+            week_idx % 2 == 0
+            and not is_taper
+            and not is_race_week
+            and training_goal not in ('lower_bpm', 'maintain')
+        )
         short_pace = s.pace_intervals if is_interval_week else s.pace_easy
 
         if is_interval_week:
             interval_idx = (week_idx // 2) % len(INTERVAL_RUNS)
-            short_notes = f"{INTERVAL_RUNS[interval_idx]}\nTotal: ~{short_km}km"
+            pace_context = ""
+            if training_goal == 'improve_pace' and goal_pace_target:
+                pace_context = f"\nTarget pace progression: aiming for {goal_pace_target}/km"
+            short_notes = f"{INTERVAL_RUNS[interval_idx]}\nTotal: ~{short_km}km{pace_context}"
         elif is_taper:
             short_notes = (
                 f"EASY SHAKEOUT (taper week)\n"
@@ -374,6 +396,27 @@ def generate_training_plan(
                 f"Easy jog at {s.pace_easy}/km — {short_km}km\n"
                 f"4-6 short strides at the end to activate legs"
             )
+        elif training_goal == 'lower_bpm':
+            hr_note = f" — target avg ≤{goal_hr} bpm" if goal_hr else ""
+            short_notes = (
+                f"AEROBIC BASE RUN\n"
+                f"Easy pace {s.pace_easy}/km — {short_km}km{hr_note}\n"
+                f"Keep effort zone 2. Slow down if HR climbs above target.\n"
+                f"Focus: nose-breathing, relaxed form"
+            )
+        elif training_goal == 'improve_pace':
+            pace_note = f" (working from {goal_pace_start} → {goal_pace_target})" if goal_pace_start and goal_pace_target else ""
+            short_notes = (
+                f"EASY RUN{pace_note}\n"
+                f"Steady pace at {s.pace_easy}/km — {short_km}km\n"
+                f"Zone 2 heart rate, conversational effort"
+            )
+        elif training_goal == 'maintain':
+            short_notes = (
+                f"MAINTENANCE RUN\n"
+                f"Steady pace at {s.pace_easy}/km — {short_km}km\n"
+                f"Comfortable effort, consistent rhythm"
+            )
         else:
             short_notes = (
                 f"EASY RUN\n"
@@ -382,11 +425,32 @@ def generate_training_plan(
             )
 
         # --- Run workouts ---
-        easy_notes = (
-            f"EASY ENDURANCE RUN — {easy_km}km\n"
-            f"Pace: {s.pace_easy}/km (zone 2)\n"
-            f"Effort: conversational, nose-breathing"
-        )
+        if training_goal == 'lower_bpm':
+            hr_note = f" — stay ≤{goal_hr} bpm" if goal_hr else ""
+            easy_notes = (
+                f"EASY ENDURANCE RUN — {easy_km}km\n"
+                f"Pace: {s.pace_easy}/km (zone 2){hr_note}\n"
+                f"Effort: nose-breathing, HR-controlled. Slow down if needed."
+            )
+        elif training_goal == 'improve_pace':
+            pace_note = f" (target: {goal_pace_target}/km)" if goal_pace_target else ""
+            easy_notes = (
+                f"EASY ENDURANCE RUN — {easy_km}km\n"
+                f"Pace: {s.pace_easy}/km (zone 2){pace_note}\n"
+                f"Effort: conversational, foundation for pace work"
+            )
+        elif training_goal == 'maintain':
+            easy_notes = (
+                f"MAINTENANCE RUN — {easy_km}km\n"
+                f"Pace: {s.pace_easy}/km (zone 2)\n"
+                f"Steady, consistent effort — keep the base"
+            )
+        else:
+            easy_notes = (
+                f"EASY ENDURANCE RUN — {easy_km}km\n"
+                f"Pace: {s.pace_easy}/km (zone 2)\n"
+                f"Effort: conversational, nose-breathing"
+            )
         if is_taper:
             easy_notes += "\n(Taper week — keep it light)"
         elif is_race_week:
@@ -413,22 +477,43 @@ def generate_training_plan(
 
         # No long run on race week (the race IS the long run)
         if not is_race_week:
-            long_notes = (
-                f"LONG RUN — {long_km}km\n"
-                f"Pace: {s.pace_long if not is_taper else s.pace_easy}/km\n"
-                f"Build distance steadily, negative split if feeling good"
-            )
             if is_taper:
                 long_notes = (
                     f"LONG RUN (taper) — {long_km}km\n"
                     f"Pace: {s.pace_easy}/km (easy)\n"
                     f"Shorter than usual — stay fresh for race day"
                 )
+            elif training_goal == 'lower_bpm':
+                hr_note = f" — monitor HR, stay ≤{goal_hr} bpm" if goal_hr else ""
+                long_notes = (
+                    f"LONG AEROBIC RUN — {long_km}km\n"
+                    f"Pace: {s.pace_easy}/km{hr_note}\n"
+                    f"Zone 2 only. Walk if HR spikes. No racing."
+                )
+            elif training_goal == 'improve_pace':
+                long_notes = (
+                    f"LONG RUN — {long_km}km\n"
+                    f"Pace: {s.pace_long}/km\n"
+                    f"Aim for negative split. Last 2km at target pace ({goal_pace_target or s.pace_intervals})."
+                )
+            elif training_goal == 'maintain':
+                long_notes = (
+                    f"LONG RUN — {long_km}km\n"
+                    f"Pace: {s.pace_long}/km\n"
+                    f"Steady effort, no need to push — just keep the habit"
+                )
+            else:
+                long_notes = (
+                    f"LONG RUN — {long_km}km\n"
+                    f"Pace: {s.pace_long}/km\n"
+                    f"Build distance steadily, negative split if feeling good"
+                )
+            long_run_pace = s.pace_easy if (is_taper or training_goal == 'lower_bpm') else s.pace_long
             long_workout = PlannedWorkoutORM(
                 date=week_monday + timedelta(days=s.day_long),
                 type=WorkoutType.run,
-                goal_duration_min=_km_to_duration(long_km, s.pace_long if not is_taper else s.pace_easy),
-                goal_pace_per_km=s.pace_long if not is_taper else s.pace_easy,
+                goal_duration_min=_km_to_duration(long_km, long_run_pace),
+                goal_pace_per_km=long_run_pace,
                 notes=long_notes,
                 recurrence="none",
                 recurrence_group_id=plan_group_id,

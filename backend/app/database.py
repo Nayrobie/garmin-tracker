@@ -54,6 +54,9 @@ def _migrate_user_settings() -> None:
         ("stretching_duration_min", "INTEGER DEFAULT 15"),
         ("training_goal", "TEXT DEFAULT 'prepare_race'"),
         ("vma_kmh", "REAL"),
+        ("goal_hr_avg_bpm", "INTEGER"),
+        ("goal_pace_start", "TEXT"),
+        ("goal_pace_target", "TEXT"),
     ]
     with engine.connect() as conn:
         for col_name, col_def in new_columns:

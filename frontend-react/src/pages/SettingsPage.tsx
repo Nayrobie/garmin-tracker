@@ -268,6 +268,9 @@ export function SettingsPage() {
               max_long_run_km: settings.max_long_run_km,
               max_weekly_volume_increase_pct: settings.max_weekly_volume_increase_pct,
               starting_volume_km: settings.starting_volume_km,
+              goal_hr_avg_bpm: settings.goal_hr_avg_bpm,
+              goal_pace_start: settings.goal_pace_start,
+              goal_pace_target: settings.goal_pace_target,
             })}
           />
         </div>
@@ -276,7 +279,7 @@ export function SettingsPage() {
         <div className="flex gap-2 mb-5 flex-wrap">
           {([
             { key: 'prepare_race', label: 'Prepare for race' },
-            { key: 'lower_hr', label: 'Lower HR' },
+            { key: 'lower_bpm', label: 'Lower BPM' },
             { key: 'improve_pace', label: 'Improve pace' },
             { key: 'maintain', label: 'Maintain' },
           ] as const).map(({ key, label }) => (
@@ -296,57 +299,94 @@ export function SettingsPage() {
           ))}
         </div>
 
-        {/* Race selector — only for prepare_race */}
+        {/* prepare_race: race picker + volume */}
         {settings.training_goal === 'prepare_race' && (
-          <div className="mb-4 p-3 rounded-xl bg-indigo-50/60 border border-indigo-100">
-            <Field label="Target race" hint="Max long run auto-set to race distance − 5 km">
-              <select
+          <>
+            <div className="mb-4 p-3 rounded-xl bg-indigo-50/60 border border-indigo-100">
+              <Field label="Target race" hint="Max long run auto-set to race distance − 5 km">
+                <select
+                  className={inputClass}
+                  defaultValue=""
+                  onChange={e => {
+                    const race = races.find(r => String(r.id) === e.target.value);
+                    if (race) update('max_long_run_km', Math.max(5, race.distance_km - 5));
+                  }}
+                >
+                  <option value="" disabled>Select a race…</option>
+                  {races.map(r => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} — {r.distance_km} km ({r.date})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <Field label="Max long run (km)" hint="Set by race selection">
+                <input type="number" min="1" step="0.5"
+                  value={settings.max_long_run_km}
+                  onChange={e => update('max_long_run_km', parseFloat(e.target.value) || 0)}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Max weekly increase %" hint="10% rule — avoid injury">
+                <input type="number" min="0" max="50" step="1"
+                  value={settings.max_weekly_volume_increase_pct}
+                  onChange={e => update('max_weekly_volume_increase_pct', parseInt(e.target.value) || 0)}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Starting volume (km)" hint="Week 1 total distance">
+                <input type="number" min="1" step="0.5"
+                  value={settings.starting_volume_km}
+                  onChange={e => update('starting_volume_km', parseFloat(e.target.value) || 0)}
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+          </>
+        )}
+
+        {/* lower_bpm: goal HR only */}
+        {settings.training_goal === 'lower_bpm' && (
+          <div className="grid grid-cols-1 gap-4 max-w-xs">
+            <Field label="Goal avg BPM" hint="Target average HR during easy runs">
+              <input type="number" min="100" max="200" step="1"
+                placeholder="e.g. 145"
+                value={settings.goal_hr_avg_bpm ?? ''}
+                onChange={e => update('goal_hr_avg_bpm', e.target.value ? parseInt(e.target.value) : null)}
                 className={inputClass}
-                defaultValue=""
-                onChange={e => {
-                  const race = races.find(r => String(r.id) === e.target.value);
-                  if (race) {
-                    update('max_long_run_km', Math.max(5, race.distance_km - 5));
-                  }
-                }}
-              >
-                <option value="" disabled>Select a race…</option>
-                {races.map(r => (
-                  <option key={r.id} value={r.id}>
-                    {r.name} — {r.distance_km} km ({r.date})
-                  </option>
-                ))}
-              </select>
+              />
             </Field>
           </div>
         )}
 
-        {/* Volume controls */}
-        <div className="grid grid-cols-3 gap-4">
-          <Field label="Max long run (km)" hint={settings.training_goal === 'prepare_race' ? 'Set by race selection' : undefined}>
-            <input type="number" min="1" step="0.5"
-              value={settings.max_long_run_km}
-              onChange={e => update('max_long_run_km', parseFloat(e.target.value) || 0)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Max weekly increase %" hint="10% rule — avoid injury">
-            <input type="number" min="0" max="50" step="1"
-              value={settings.max_weekly_volume_increase_pct}
-              onChange={e => update('max_weekly_volume_increase_pct', parseInt(e.target.value) || 0)}
-              className={inputClass}
-            />
-          </Field>
-          {settings.training_goal !== 'maintain' && (
-            <Field label="Starting volume (km)" hint="Week 1 total distance">
-              <input type="number" min="1" step="0.5"
-                value={settings.starting_volume_km}
-                onChange={e => update('starting_volume_km', parseFloat(e.target.value) || 0)}
+        {/* improve_pace: current + target pace */}
+        {settings.training_goal === 'improve_pace' && (
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Starting pace (min/km)" hint="Your current easy run pace">
+              <input type="text" placeholder="e.g. 7:00"
+                value={settings.goal_pace_start ?? ''}
+                onChange={e => update('goal_pace_start', e.target.value)}
                 className={inputClass}
               />
             </Field>
-          )}
-        </div>
+            <Field label="Target pace (min/km)" hint="Pace you want to reach">
+              <input type="text" placeholder="e.g. 6:00"
+                value={settings.goal_pace_target ?? ''}
+                onChange={e => update('goal_pace_target', e.target.value)}
+                className={inputClass}
+              />
+            </Field>
+          </div>
+        )}
+
+        {/* maintain: no params */}
+        {settings.training_goal === 'maintain' && (
+          <p className="text-xs text-gray-400 italic">
+            No extra parameters needed — the plan keeps your current volume and intensity steady.
+          </p>
+        )}
       </Card>
 
       {/* ── Schedule ── */}

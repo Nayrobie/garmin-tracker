@@ -215,6 +215,9 @@ export interface UserSettings {
 
   // Training goal
   training_goal: string;
+  goal_hr_avg_bpm: number | null;
+  goal_pace_start: string | null;
+  goal_pace_target: string | null;
 
   // Schedule (0=Mon … 6=Sun)
   training_epoch: string; // "YYYY-MM-DD"

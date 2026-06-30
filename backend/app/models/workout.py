@@ -318,11 +318,16 @@ class UserSettingsORM(Base):
     # Unified sync lookback for manual syncs (days)
     sync_lookback_days: Mapped[int] = mapped_column(Integer, default=30)
 
-    # Training goal: 'prepare_race' | 'lower_hr' | 'improve_pace' | 'maintain'
+    # Training goal: 'prepare_race' | 'lower_bpm' | 'improve_pace' | 'maintain'
     training_goal: Mapped[str] = mapped_column(String(32), default="prepare_race")
 
     # VMA (Vitesse Maximale Aérobie) in km/h — used to auto-compute paces
     vma_kmh: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+
+    # Goal-specific parameters
+    goal_hr_avg_bpm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=None)
+    goal_pace_start: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, default=None)
+    goal_pace_target: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, default=None)
 
 
 # ---------------------------------------------------------------------------
@@ -372,6 +377,9 @@ class UserSettingsRead(BaseModel):
     # Training goal
     training_goal: str
     vma_kmh: Optional[float]
+    goal_hr_avg_bpm: Optional[int]
+    goal_pace_start: Optional[str]
+    goal_pace_target: Optional[str]
 
     model_config = {"from_attributes": True}
 
@@ -411,6 +419,9 @@ class UserSettingsUpdate(BaseModel):
 
     training_goal: Optional[str] = None
     vma_kmh: Optional[float] = None
+    goal_hr_avg_bpm: Optional[int] = None
+    goal_pace_start: Optional[str] = None
+    goal_pace_target: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
