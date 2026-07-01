@@ -685,7 +685,7 @@ export function CyclePage() {
                         {r.sleep_score ?? '—'}
                       </td>
                       <td className="py-1.5 pr-3 text-right text-emerald-600 font-medium">{r.hrv_overnight ?? '—'}</td>
-                      <td className="py-1.5 pr-3 text-right text-amber-600">{r.resting_hr ?? '—'}</td>
+                      <td className="py-1.5 pr-3 text-right font-medium" style={{ color: '#f43f5e' }}>{r.resting_hr ?? '—'}</td>
                       <td className="py-1.5 text-center">
                         {(() => {
                           const phase = computePhaseForDate(r.date, cycles);
