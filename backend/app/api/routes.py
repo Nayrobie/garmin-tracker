@@ -572,13 +572,21 @@ def get_running_stats(
     progression: list[RunningPeriodStats] = []
 
     if granularity == "monthly":
-        # From January of current year to current month (inclusive)
+        # Span from the earliest run's month to the current month (inclusive)
         today = date.today()
+        if actual_runs:
+            first = actual_runs[0].date
+            start_year, start_month = first.year, first.month
+        else:
+            start_year, start_month = today.year, today.month
         monthly_keys: list[str] = []
-        month = 1
-        while (today.year, month) <= (today.year, today.month):
-            monthly_keys.append(f"{today.year:04d}-{month:02d}")
-            month += 1
+        y, m = start_year, start_month
+        while (y, m) <= (today.year, today.month):
+            monthly_keys.append(f"{y:04d}-{m:02d}")
+            m += 1
+            if m > 12:
+                m = 1
+                y += 1
 
         for period_key in monthly_keys:
             group = period_data.get(period_key, [])
