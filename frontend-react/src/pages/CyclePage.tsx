@@ -2,7 +2,7 @@
  * Cycle page: sleep, HRV, and menstrual cycle tracking.
  * Unified view correlating sleep quality with cycle phases.
  */
-import { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { format, parseISO, subMonths, addMonths, startOfYear, endOfYear, isSameMonth, differenceInDays, addDays } from 'date-fns';
 import { Moon, RefreshCw, ChevronLeft, ChevronRight, Heart, Droplets } from 'lucide-react';
 import {
@@ -52,11 +52,34 @@ function Sparkline({ data, color = '#9ca3af', width = 48, height = 16 }: { data:
   );
 }
 
-function scoreColor(score: number | null): string {
-  if (score == null) return 'text-gray-400';
-  if (score >= 80) return 'text-green-600';
-  if (score >= 60) return 'text-yellow-600';
-  return 'text-red-500';
+function scoreStyle(score: number | null): React.CSSProperties {
+  if (score == null) return { color: '#9ca3af' };
+  // Hex colour stops: [score, hex]
+  // yellow → lime → yellow-green → forest green → teal-green
+  const stops: [number, string][] = [
+    [45, '#d36135'],
+    [55, '#ffcf56'],
+    [60, '#1d6e3d'],
+    [70, '#20964f'],
+    [80, '#16db65'],
+  ];
+  const parseHex = (hex: string): [number, number, number] => {
+    const n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+  };
+  if (score <= stops[0][0]) return { color: stops[0][1] };
+  if (score >= stops[stops.length - 1][0]) return { color: stops[stops.length - 1][1] };
+  let i = 0;
+  while (i < stops.length - 2 && score >= stops[i + 1][0]) i++;
+  const [s0, hex0] = stops[i];
+  const [s1, hex1] = stops[i + 1];
+  const t = (score - s0) / (s1 - s0);
+  const [r0, g0, b0] = parseHex(hex0);
+  const [r1, g1, b1] = parseHex(hex1);
+  const r = Math.round(r0 + t * (r1 - r0));
+  const g = Math.round(g0 + t * (g1 - g0));
+  const b = Math.round(b0 + t * (b1 - b0));
+  return { color: `rgb(${r}, ${g}, ${b})` };
 }
 
 const PHASE_COLORS: Record<string, string> = {
@@ -483,7 +506,7 @@ export function CyclePage() {
         </Card>
         <Card padding="sm" className="text-center">
           <p className="text-[9px] uppercase text-gray-400 tracking-wider mb-0.5">Sleep Score</p>
-          <p className={`text-base font-semibold ${scoreColor(avgScore)}`}>{avgScore ?? '—'}<Sparkline data={sparkScore} color="#14b8a6" /></p>
+          <p className="text-base font-semibold" style={scoreStyle(avgScore)}>{avgScore ?? '—'}<Sparkline data={sparkScore} color="#14b8a6" /></p>
         </Card>
         <Card padding="sm" className="text-center">
           <p className="text-[9px] uppercase text-gray-400 tracking-wider mb-0.5">Resting HR</p>
@@ -666,26 +689,26 @@ export function CyclePage() {
                   <tr className="text-left text-[10px] text-gray-400 uppercase tracking-wider border-b border-gray-100">
                     <th className="pb-2 pr-3">Date</th>
                     <th className="pb-2 pr-3">Bed</th>
+                    <th className="pb-2 pr-3">Wake</th>
                     <th className="pb-2 pr-3 text-right">Sleep</th>
                     <th className="pb-2 pr-3 text-right">Score</th>
-                    <th className="pb-2 pr-3 text-right">HRV</th>
                     <th className="pb-2 pr-3 text-right">RHR</th>
                     <th className="pb-2 text-center">Cycle</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {records.map((r) => (
-                    <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50/80 transition-colors">
+                  {records.map((r) => {
+                    const isWeekend = [0, 6].includes(parseISO(r.date).getDay());
+                    return (
+                    <tr key={r.id} className={`border-b border-gray-50 hover:bg-gray-50/80 transition-colors ${isWeekend ? 'bg-gray-100/60' : ''}`}>
                       <td className="py-1.5 pr-3 text-gray-700 whitespace-nowrap">{format(parseISO(r.date), 'EEE d')}</td>
-                      <td className="py-1.5 pr-3 text-gray-400 whitespace-nowrap">
-                        {r.start_time && r.end_time ? `${r.start_time}–${r.end_time}` : '—'}
-                      </td>
+                      <td className="py-1.5 pr-3 text-gray-400 whitespace-nowrap text-[11px]">{r.start_time ?? '—'}</td>
+                      <td className="py-1.5 pr-3 text-gray-400 whitespace-nowrap text-[11px]">{r.end_time ?? '—'}</td>
                       <td className="py-1.5 pr-3 text-right font-medium text-gray-800">{formatHoursMin(r.total_sleep_min)}</td>
-                      <td className={`py-1.5 pr-3 text-right font-semibold ${scoreColor(r.sleep_score)}`}>
+                      <td className="py-1.5 pr-3 text-right font-semibold" style={scoreStyle(r.sleep_score)}>
                         {r.sleep_score ?? '—'}
                       </td>
-                      <td className="py-1.5 pr-3 text-right text-emerald-600 font-medium">{r.hrv_overnight ?? '—'}</td>
-                      <td className="py-1.5 pr-3 text-right font-medium" style={{ color: '#f43f5e' }}>{r.resting_hr ?? '—'}</td>
+                      <td className="py-1.5 pr-3 text-right font-medium text-gray-800">{r.resting_hr ?? '—'}</td>
                       <td className="py-1.5 text-center">
                         {(() => {
                           const phase = computePhaseForDate(r.date, cycles);
@@ -702,7 +725,8 @@ export function CyclePage() {
                         })()}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

@@ -16,6 +16,15 @@ start = today - timedelta(days=89)
 existing_dates = {r.date for r in db.query(SleepRecordORM).all()}
 added = 0
 
+# Backfill placeholder times on existing records
+for rec in db.query(SleepRecordORM).filter(SleepRecordORM.start_time == "23:15").all():
+    total_min = rec.total_sleep_min or 430
+    awake_min = rec.awake_min or 18
+    bed_offset = int(random.gauss(1395, 20))
+    wake_offset = bed_offset + total_min + awake_min
+    rec.start_time = f"{(bed_offset % 1440) // 60:02d}:{(bed_offset % 1440) % 60:02d}"
+    rec.end_time   = f"{(wake_offset % 1440) // 60:02d}:{(wake_offset % 1440) % 60:02d}"
+
 for i in range(90):
     d = start + timedelta(days=i)
     if d in existing_dates:
@@ -32,6 +41,11 @@ for i in range(90):
     rhr       = max(42,  int(random.gauss(51, 3)))
     hrv       = max(25,  int(random.gauss(50, 8)))
 
+    bed_offset = int(random.gauss(1395, 20))   # ~23:15 from midnight, ±20 min
+    wake_offset = bed_offset + total_min + awake_min
+    start_time = f"{(bed_offset % 1440) // 60:02d}:{(bed_offset % 1440) % 60:02d}"
+    end_time   = f"{(wake_offset % 1440) // 60:02d}:{(wake_offset % 1440) % 60:02d}"
+
     db.add(SleepRecordORM(
         date=d,
         total_sleep_min=total_min,
@@ -42,8 +56,8 @@ for i in range(90):
         sleep_score=score,
         resting_hr=rhr,
         hrv_overnight=hrv,
-        start_time="23:15",
-        end_time="07:10",
+        start_time=start_time,
+        end_time=end_time,
     ))
     added += 1
 
