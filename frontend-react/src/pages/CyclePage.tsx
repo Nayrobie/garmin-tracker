@@ -192,9 +192,6 @@ function CycleTrackerCard({ cycleInfo }: { cycleInfo: CycleInfo }) {
               <p className="text-xs text-gray-600">
                 {activeMeta.label} <span className="text-gray-400">· {daysLeftInPhase}d left in phase</span>
               </p>
-              <p className="text-[10px] text-emerald-600 mt-0.5">
-                {activeMeta.tip}
-              </p>
             </div>
           </div>
 
@@ -253,32 +250,25 @@ function CycleTrackerCard({ cycleInfo }: { cycleInfo: CycleInfo }) {
           </div>
         </div>
 
-        {/* Expanded phase detail (click a segment to show) */}
-        {selectedPhase && (
+        {/* Phase detail — always visible; click a segment to switch phase */}
+        {(() => { const displayPhase = selectedPhase ?? cycleInfo.phase; return (
           <div
             className="flex items-start gap-3 p-3 rounded-lg border transition-all animate-in fade-in duration-200"
-            style={{ backgroundColor: PHASE_COLORS[selectedPhase] + '10', borderColor: PHASE_COLORS[selectedPhase] + '40' }}
+            style={{ backgroundColor: PHASE_COLORS[displayPhase] + '10', borderColor: PHASE_COLORS[displayPhase] + '40' }}
           >
-            <span className="text-lg">{PHASE_META[selectedPhase].emoji}</span>
+            <span className="text-lg">{PHASE_META[displayPhase].emoji}</span>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-gray-800 mb-0.5">
-                {PHASE_META[selectedPhase].label}
+                {PHASE_META[displayPhase].label}
                 <span className="font-normal text-gray-400 ml-1">
-                  · days {cycleInfo.segments.find((s) => s.phase === selectedPhase)?.start}–{cycleInfo.segments.find((s) => s.phase === selectedPhase)?.end}
+                  · days {cycleInfo.segments.find((s) => s.phase === displayPhase)?.start}–{cycleInfo.segments.find((s) => s.phase === displayPhase)?.end}
                 </span>
               </p>
-              <p className="text-[11px] text-gray-600 mb-1">{PHASE_META[selectedPhase].why}</p>
-              <p className="text-[11px] text-emerald-700 font-medium"> {PHASE_META[selectedPhase].tip}</p>
+              <p className="text-[11px] text-gray-600 mb-1">{PHASE_META[displayPhase].why}</p>
+              <p className="text-[11px] text-emerald-700 font-medium">{PHASE_META[displayPhase].tip}</p>
             </div>
-            <button
-              type="button"
-              onClick={() => setSelectedPhase(null)}
-              className="text-gray-400 hover:text-gray-600 text-xs p-1"
-            >
-              ✕
-            </button>
           </div>
-        )}
+        ); })()}
       </div>
     </Card>
   );
