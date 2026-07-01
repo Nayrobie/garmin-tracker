@@ -28,6 +28,12 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./workouts.db")
 GOOGLE_SHEETS_API_KEY = os.getenv("GOOGLE_SHEETS_API_KEY")
 GOOGLE_SHEETS_SPREADSHEET_ID = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID")
 
+# Google OAuth (Tasks API)
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/google/callback")
+GOOGLE_CLIENT_SECRETS_DICT = os.getenv("GOOGLE_CLIENT_SECRETS_DICT")
+
 # User physiological profile (for context in analysis)
 # Values are loaded from environment variables to keep personal data out of version control.
 USER_PROFILE = {

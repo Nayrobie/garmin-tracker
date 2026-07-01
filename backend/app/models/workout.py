@@ -117,6 +117,7 @@ class PlannedWorkoutORM(Base):
     recurrence: Mapped[str] = mapped_column(String(20), nullable=False, default="none")
     recurrence_group_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
     garmin_workout_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    google_task_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     actual_workouts: Mapped[List["ActualWorkoutORM"]] = relationship(
         "ActualWorkoutORM", back_populates="planned_workout"

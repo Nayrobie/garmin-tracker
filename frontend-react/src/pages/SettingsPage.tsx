@@ -3,13 +3,15 @@
  * organised into grouped sections (races, paces, goal, schedule, workouts).
  */
 import { useEffect, useState, useCallback } from 'react';
-import { Check, Loader2, Zap } from 'lucide-react';
+import { Check, Loader2, Zap, Link, Unlink, RefreshCw, Watch, ListTodo } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { DatePicker } from '../components/ui/DatePicker';
 import { RaceManager } from '../components/races/RaceManager';
 import { useRaces } from '../hooks/useRaces';
 import { settingsApi } from '../api/settings';
+import { scheduleApi } from '../api/schedule';
+import { googleApi } from '../api/google';
 import type { UserSettings, UserSettingsUpdate } from '../types';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -65,6 +67,16 @@ export function SettingsPage() {
   const [vmaInput, setVmaInput] = useState<string>('');
   const [paceMode, setPaceMode] = useState<'auto' | 'manual'>('manual');
 
+  // Google Tasks connection state
+  const [googleConnected, setGoogleConnected] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  // Sync action states
+  const [syncingGarmin, setSyncingGarmin] = useState(false);
+  const [pushingGarmin, setPushingGarmin] = useState(false);
+  const [pushingTasks, setPushingTasks] = useState(false);
+  const [syncActionMsg, setSyncActionMsg] = useState<string | null>(null);
+
   const { races } = useRaces();
 
   const load = useCallback(async () => {
@@ -84,6 +96,90 @@ export function SettingsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Check Google connection status
+  useEffect(() => {
+    googleApi.getStatus().then(r => setGoogleConnected(r.connected)).catch(() => {});
+  }, []);
+
+  // Listen for OAuth popup close → re-check status
+  useEffect(() => {
+    const onFocus = () => { googleApi.getStatus().then(r => setGoogleConnected(r.connected)).catch(() => {}); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
+  const connectGoogle = async () => {
+    setGoogleLoading(true);
+    try {
+      const { url } = await googleApi.getAuthUrl();
+      window.open(url, '_blank', 'width=500,height=600');
+    } catch {
+      setError('Failed to get Google auth URL');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const disconnectGoogle = async () => {
+    setGoogleLoading(true);
+    try {
+      await googleApi.disconnect();
+      setGoogleConnected(false);
+    } catch {
+      setError('Failed to disconnect Google');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  // Sync action handlers
+  const handleSyncGarmin = async () => {
+    setSyncingGarmin(true);
+    setSyncActionMsg(null);
+    try {
+      const result = await scheduleApi.triggerSync();
+      if (result.error) {
+        setSyncActionMsg(`Sync: ${result.error}`);
+      } else {
+        setSyncActionMsg(`Synced ${result.synced} new, ${result.updated} updated`);
+      }
+    } catch (e) {
+      setSyncActionMsg(e instanceof Error ? e.message : 'Sync failed');
+    } finally {
+      setSyncingGarmin(false);
+    }
+  };
+
+  const handlePushGarmin = async () => {
+    setPushingGarmin(true);
+    setSyncActionMsg(null);
+    try {
+      const result = await scheduleApi.pushWeekToGarmin();
+      const parts = [`${result.pushed} pushed`];
+      if (result.skipped > 0) parts.push(`${result.skipped} skipped`);
+      if (result.flushed > 0) parts.push(`${result.flushed} old removed`);
+      if (result.errors > 0) parts.push(`${result.errors} errors`);
+      setSyncActionMsg(parts.join(' · '));
+    } catch (e) {
+      setSyncActionMsg(e instanceof Error ? e.message : 'Push failed');
+    } finally {
+      setPushingGarmin(false);
+    }
+  };
+
+  const handlePushTasks = async () => {
+    setPushingTasks(true);
+    setSyncActionMsg(null);
+    try {
+      const result = await googleApi.pushWeekTasks();
+      setSyncActionMsg(`${result.created} tasks created, ${result.skipped} skipped`);
+    } catch (e) {
+      setSyncActionMsg(e instanceof Error ? e.message : 'Push tasks failed');
+    } finally {
+      setPushingTasks(false);
+    }
+  };
 
   const saveSection = async (section: string, updates: UserSettingsUpdate) => {
     setSaveStates(s => ({ ...s, [section]: 'saving' }));
@@ -488,6 +584,61 @@ export function SettingsPage() {
             </p>
           </div>
         </label>
+      </Card>
+
+      {/* Google Tasks */}
+      <Card className="p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-700 tracking-wide uppercase">Google Tasks</h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Push workout reminders to Google Tasks when pushing to Garmin.
+            </p>
+          </div>
+          {googleConnected ? (
+            <Button variant="secondary" size="sm" onClick={disconnectGoogle} disabled={googleLoading}>
+              <Unlink size={14} />
+              Disconnect
+            </Button>
+          ) : (
+            <Button variant="primary" size="sm" onClick={connectGoogle} disabled={googleLoading}>
+              {googleLoading ? <Loader2 size={14} className="animate-spin" /> : <Link size={14} />}
+              Connect Google
+            </Button>
+          )}
+        </div>
+        <p className="text-xs text-gray-400">
+          {googleConnected
+            ? '✓ Connected — tasks will be created in the "Workouts" list when you push to Garmin.'
+            : 'Not connected. Click "Connect Google" to authorize access to Google Tasks.'}
+        </p>
+      </Card>
+
+      {/* ── Sync Actions ── */}
+      <Card className="p-5 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-700 tracking-wide uppercase">Sync Actions</h2>
+          <p className="text-xs text-gray-500 mt-1">
+            Trigger individual sync operations for debugging.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" onClick={handleSyncGarmin} disabled={syncingGarmin}>
+            {syncingGarmin ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            Sync from Garmin
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handlePushGarmin} disabled={pushingGarmin}>
+            {pushingGarmin ? <Loader2 size={14} className="animate-spin" /> : <Watch size={14} />}
+            Push workouts to Garmin
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handlePushTasks} disabled={pushingTasks}>
+            {pushingTasks ? <Loader2 size={14} className="animate-spin" /> : <ListTodo size={14} />}
+            Push Google Tasks
+          </Button>
+        </div>
+        {syncActionMsg && (
+          <p className="text-xs text-gray-500">{syncActionMsg}</p>
+        )}
       </Card>
     </div>
   );

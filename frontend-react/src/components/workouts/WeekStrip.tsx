@@ -19,7 +19,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core';
 import { format, addDays, addWeeks, subWeeks, startOfWeek, isToday, parseISO } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, RefreshCw, Watch } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import type {
@@ -30,6 +30,7 @@ import type {
   WeeklySchedule,
 } from '../../types';
 import { scheduleApi } from '../../api/schedule';
+import { googleApi } from '../../api/google';
 import { WorkoutCard } from './WorkoutCard';
 import { PlanWorkoutModal } from './PlanWorkoutModal';
 import { WorkoutDetailModal } from './WorkoutDetailModal';
@@ -197,8 +198,6 @@ export function WeekStrip({ onWeekChange, onSyncComplete }: WeekStripProps) {
   const { schedule, setSchedule, loading, error, load } = useWeekSchedule(weekStart);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
-  const [pushingWeek, setPushingWeek] = useState(false);
-  const [pushMsg, setPushMsg] = useState<string | null>(null);
   const [lastPushed, setLastPushed] = useState<string | null>(null);
 
   // Modal state
@@ -247,45 +246,43 @@ export function WeekStrip({ onWeekChange, onSyncComplete }: WeekStripProps) {
 
   const isCurrentWeek = format(weekStart, 'yyyy-MM-dd') === format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
 
-  // Garmin sync
-  async function handleSync() {
+  // Sync All: pull from Garmin, push workouts to Garmin, push Google Tasks
+  async function handleSyncAll() {
     setSyncing(true);
     setSyncMsg(null);
+    const parts: string[] = [];
     try {
-      const result = await scheduleApi.triggerSync();
-      if (result.error) {
-        setSyncMsg(`Sync: ${result.error}`);
-      } else {
-        setSyncMsg(`Synced ${result.synced} new, ${result.updated} updated.`);
-        load(weekStart);
-        onSyncComplete?.();
+      // 1. Pull activities from Garmin
+      const syncResult = await scheduleApi.triggerSync();
+      if (syncResult.error) {
+        parts.push(`Sync: ${syncResult.error}`);
+      } else if (syncResult.synced > 0 || syncResult.updated > 0) {
+        parts.push(`${syncResult.synced} synced`);
       }
-    } catch {
-      setSyncMsg('Sync failed — check backend logs.');
-    } finally {
-      setSyncing(false);
-    }
-  }
 
-  // Push current week's workouts to Garmin
-  async function handlePushWeek() {
-    setPushingWeek(true);
-    setPushMsg(null);
-    try {
+      // 2. Push planned workouts to Garmin
       const currentWeekStart = format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
-      const result = await scheduleApi.pushWeekToGarmin(currentWeekStart);
-      const parts = [`${result.pushed} pushed`];
-      if (result.skipped > 0) parts.push(`${result.skipped} skipped`);
-      if (result.flushed > 0) parts.push(`${result.flushed} old removed`);
-      if (result.errors > 0) parts.push(`${result.errors} errors`);
-      setPushMsg(parts.join(' · '));
+      const pushResult = await scheduleApi.pushWeekToGarmin(currentWeekStart);
+      if (pushResult.pushed > 0) parts.push(`${pushResult.pushed} pushed`);
+      if (pushResult.errors > 0) parts.push(`${pushResult.errors} push errors`);
+
+      // 3. Push Google Tasks (silently skip if not connected)
+      try {
+        const taskResult = await googleApi.pushWeekTasks(currentWeekStart);
+        if (taskResult.created > 0) parts.push(`${taskResult.created} tasks`);
+      } catch {
+        // Not connected or failed — skip silently
+      }
+
       const now = new Date().toISOString();
       setLastPushed(now);
+      setSyncMsg(parts.length > 0 ? parts.join(' · ') : 'All up to date');
       load(weekStart);
+      onSyncComplete?.();
     } catch (e) {
-      setPushMsg(e instanceof Error ? e.message : 'Push failed');
+      setSyncMsg(e instanceof Error ? e.message : 'Sync failed');
     } finally {
-      setPushingWeek(false);
+      setSyncing(false);
     }
   }
 
@@ -438,41 +435,22 @@ export function WeekStrip({ onWeekChange, onSyncComplete }: WeekStripProps) {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Push to Garmin */}
-          <div className="flex items-center gap-1.5">
-            {pushMsg && <p className="text-[11px] text-gray-500">{pushMsg}</p>}
-            {!pushMsg && lastPushed && (
-              <p className="text-[11px] text-gray-400">
-                Last pushed: {format(parseISO(lastPushed), 'd MMM HH:mm')}
-              </p>
-            )}
-            <button
-              onClick={handlePushWeek}
-              disabled={pushingWeek}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/60 border border-white/50 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/5 hover:border-[var(--color-accent)]/30 transition-colors disabled:opacity-50"
-              title="Push this week's planned workouts to Garmin Connect. Replaces any already-pushed workouts for the week. Toggle 'Flush last week' in Settings to also remove the previous week's Garmin workouts."
-            >
-              <Watch size={12} className={pushingWeek ? 'animate-pulse' : ''} />
-              Push to Garmin
-            </button>
-          </div>
-
-          {/* Sync Garmin */}
+          {/* Sync All */}
           <div className="flex items-center gap-1.5">
             {syncMsg && <p className="text-[11px] text-gray-500">{syncMsg}</p>}
-            {!syncMsg && schedule?.last_sync && (
+            {!syncMsg && lastPushed && (
               <p className="text-[11px] text-gray-400">
-                Last sync: {format(parseISO(schedule.last_sync), 'HH:mm')}
+                Last sync: {format(parseISO(lastPushed), 'd MMM HH:mm')}
               </p>
             )}
             <button
-              onClick={handleSync}
+              onClick={handleSyncAll}
               disabled={syncing}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/60 border border-white/50 text-gray-600 hover:bg-white/80 transition-colors disabled:opacity-50"
-              title="Pull completed activities from Garmin Connect into the calendar."
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/60 border border-white/50 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/5 hover:border-[var(--color-accent)]/30 transition-colors disabled:opacity-50"
+              title="Sync activities from Garmin, push planned workouts to Garmin Connect, and create Google Tasks for the week."
             >
               <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
-              Sync Garmin
+              Sync All
             </button>
           </div>
         </div>

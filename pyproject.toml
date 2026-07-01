@@ -16,7 +16,9 @@ dependencies = [
     "pandas (>=3.0.3,<4.0.0)",
     "plotly (>=6.8.0,<7.0.0)",
     "garminconnect (>=0.3.5,<0.4.0)",
-    "sqlalchemy (>=2.0.51,<3.0.0)"
+    "sqlalchemy (>=2.0.51,<3.0.0)",
+    "google-auth-oauthlib (>=1.4.0,<2.0.0)",
+    "google-api-python-client (>=2.198.0,<3.0.0)"
 ]
 
 

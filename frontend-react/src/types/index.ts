@@ -34,9 +34,10 @@ export interface PlannedWorkout {
   recurrence: Recurrence;
   recurrence_group_id: string | null;
   garmin_workout_id: string | null;
+  google_task_id: string | null;
 }
 
-export type CreatePlannedWorkoutPayload = Omit<PlannedWorkout, 'id' | 'recurrence_group_id'> & {
+export type CreatePlannedWorkoutPayload = Omit<PlannedWorkout, 'id' | 'recurrence_group_id' | 'garmin_workout_id' | 'google_task_id'> & {
   recurrence_weeks?: number;
 };
 export type UpdatePlannedWorkoutPayload = Partial<Omit<CreatePlannedWorkoutPayload, 'recurrence' | 'recurrence_weeks'>>;

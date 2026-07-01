@@ -999,6 +999,14 @@ def push_planned_workout(planned_id: int, db: Session) -> dict:
         client.schedule_workout(garmin_id, planned.date.isoformat())
 
         planned.garmin_workout_id = garmin_id
+
+        # Create Google Task (silently skips if not connected or already exists)
+        from app.services.google_tasks_service import create_workout_task
+
+        task_id = create_workout_task(planned)
+        if task_id:
+            planned.google_task_id = task_id
+
         db.commit()
 
         logger.info("Pushed planned workout %d → Garmin workoutId %s", planned_id, garmin_id)
@@ -1134,6 +1142,8 @@ def flush_garmin_workouts_for_range(
     except Exception as exc:
         return {"flushed": 0, "errors": len(rows), "detail": f"login_failed:{exc}"}
 
+    from app.services.google_tasks_service import delete_workout_task
+
     flushed = errors = 0
     for row in rows:
         try:
@@ -1146,6 +1156,11 @@ def flush_garmin_workouts_for_range(
             )
             row.garmin_workout_id = None  # Clear locally even if remote delete failed
             errors += 1
+
+        # Also remove corresponding Google Task
+        if row.google_task_id:
+            delete_workout_task(row)
+            row.google_task_id = None
 
     db.commit()
     logger.info("Flush complete: %d deleted, %d errors.", flushed, errors)

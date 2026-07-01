@@ -4,7 +4,7 @@
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import { format, parseISO, subMonths, addMonths, startOfYear, endOfYear, isSameMonth, differenceInDays, addDays } from 'date-fns';
-import { Moon, RefreshCw, ChevronLeft, ChevronRight, Heart, Droplets } from 'lucide-react';
+import { Moon, ChevronLeft, ChevronRight, Heart, Droplets } from 'lucide-react';
 import {
   ComposedChart,
   Bar,
@@ -21,7 +21,6 @@ import {
 import type { SleepRecord, MenstrualCycle } from '../types';
 import { sleepApi } from '../api/sleep';
 import { Card } from '../components/ui/Card';
-import { Button } from '../components/ui/Button';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -305,7 +304,6 @@ export function CyclePage() {
   const [records, setRecords] = useState<SleepRecord[]>([]);
   const [cycles, setCycles] = useState<MenstrualCycle[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [granularity, setGranularity] = useState<Granularity>('Month');
   const [anchor, setAnchor] = useState<Date>(new Date());
@@ -336,21 +334,6 @@ export function CyclePage() {
   useEffect(() => {
     loadData(granularity, anchor);
   }, [granularity, anchor, loadData]);
-
-  const handleSync = async () => {
-    setSyncing(true);
-    try {
-      await Promise.all([
-        sleepApi.sync(granularity === 'Year' ? 365 : 60),
-        sleepApi.syncCycles(),
-      ]);
-      loadData(granularity, anchor);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sync failed');
-    } finally {
-      setSyncing(false);
-    }
-  };
 
   const goBack = () => setAnchor((prev) => granularity === 'Year' ? subMonths(prev, 12) : subMonths(prev, 1));
   const goForward = () => setAnchor((prev) => granularity === 'Year' ? addMonths(prev, 12) : addMonths(prev, 1));
@@ -491,10 +474,7 @@ export function CyclePage() {
               </button>
             ))}
           </div>
-          <Button variant="secondary" size="sm" onClick={handleSync} loading={syncing}>
-            <RefreshCw size={12} />
-            Sync
-          </Button>
+
         </div>
       </div>
 

@@ -3,6 +3,10 @@
 .env.local
 .env.*.local
 
+# Google OAuth tokens (secrets)
+google_token.json
+backend/google_token.json
+
 # Python
 __pycache__/
 *.py[cod]

@@ -861,3 +861,121 @@ def sync_cycles(
         days_back = 365  # first sync: full year
     return sync_menstrual_cycles(db, days_back=days_back)
 
+
+# ---------------------------------------------------------------------------
+# Google Tasks OAuth
+# ---------------------------------------------------------------------------
+
+
+@router.get("/google/auth-url")
+def google_auth_url() -> dict:
+    """Get Google OAuth2 authorization URL for Tasks API.
+
+    Returns:
+        Dict with ``url`` key (or error if not configured).
+    """
+    from app.services.google_tasks_service import get_auth_url
+
+    url = get_auth_url()
+    if url is None:
+        raise HTTPException(status_code=500, detail="Google OAuth not configured")
+    return {"url": url}
+
+
+@router.get("/google/callback")
+def google_callback(code: str) -> dict:
+    """Handle Google OAuth2 callback and store tokens.
+
+    Args:
+        code: Authorization code from Google.
+
+    Returns:
+        Dict with ``status`` key.
+    """
+    from app.services.google_tasks_service import handle_callback
+
+    error = handle_callback(code)
+    if error:
+        raise HTTPException(status_code=500, detail=error)
+    # Return an HTML page that closes itself / redirects to settings
+    from fastapi.responses import HTMLResponse
+
+    return HTMLResponse(
+        "<html><body><script>window.close(); window.opener && window.opener.location.reload();</script>"
+        "<p>Connected! You can close this tab.</p></body></html>"
+    )
+
+
+@router.get("/google/status")
+def google_status() -> dict:
+    """Check if Google Tasks is connected.
+
+    Returns:
+        Dict with ``connected`` boolean.
+    """
+    from app.services.google_tasks_service import is_connected
+
+    return {"connected": is_connected()}
+
+
+@router.post("/google/disconnect")
+def google_disconnect() -> dict:
+    """Disconnect Google Tasks (remove stored tokens).
+
+    Returns:
+        Dict with ``status`` key.
+    """
+    from app.services.google_tasks_service import disconnect
+
+    disconnect()
+    return {"status": "disconnected"}
+
+
+@router.post("/google/push-week-tasks")
+def push_week_tasks(
+    week_start: Optional[str] = None,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Push Google Tasks for all planned workouts in a given week.
+
+    Creates a task for each planned workout that doesn't already have one.
+
+    Args:
+        week_start: ISO date (YYYY-MM-DD) of the Monday. Defaults to current Monday.
+        db: Database session.
+
+    Returns:
+        Dict with ``created`` and ``skipped`` counts.
+    """
+    from app.services.google_tasks_service import create_workout_task, is_connected
+
+    if not is_connected():
+        raise HTTPException(status_code=400, detail="Google Tasks not connected")
+
+    if week_start:
+        ws = date.fromisoformat(week_start)
+    else:
+        today = date.today()
+        ws = today - timedelta(days=today.weekday())
+
+    week_end = ws + timedelta(days=6)
+    planned_workouts = (
+        db.query(PlannedWorkoutORM)
+        .filter(PlannedWorkoutORM.date >= ws, PlannedWorkoutORM.date <= week_end)
+        .all()
+    )
+
+    created = 0
+    skipped = 0
+    for pw in planned_workouts:
+        task_id = create_workout_task(pw)
+        if task_id and task_id != pw.google_task_id:
+            pw.google_task_id = task_id
+            created += 1
+        else:
+            skipped += 1
+
+    db.commit()
+    return {"created": created, "skipped": skipped}
+
+
