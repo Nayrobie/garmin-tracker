@@ -353,7 +353,8 @@ export function CyclePage() {
 
   // Chart data: oldest first (records from API are already ascending)
   const chartData = [...records].map((r) => ({
-    date: format(parseISO(r.date), granularity === 'Year' ? 'd/M' : 'd'),
+    date: r.date,
+    label: format(parseISO(r.date), granularity === 'Year' ? 'd/M' : 'd'),
     fullDate: format(parseISO(r.date), 'EEE d MMM'),
     Deep: +((r.deep_sleep_min ?? 0) / 60).toFixed(2),
     Light: +((r.light_sleep_min ?? 0) / 60).toFixed(2),
@@ -555,7 +556,7 @@ export function CyclePage() {
             <ResponsiveContainer width="100%" height={180}>
               <ComposedChart data={chartData} barCategoryGap="15%" margin={{ top: 5, right: 50, bottom: 0, left: -10 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => format(parseISO(v), granularity === 'Year' ? 'd/M' : 'd')} />
                 <YAxis yAxisId="hours" tick={{ fontSize: 10 }} unit="h" axisLine={false} tickLine={false} domain={[0, (max: number) => Math.ceil(max + 0.5)]} />
                 <YAxis yAxisId="score" orientation="right" domain={[0, 100]} tick={{ fontSize: 10 }} hide />
                 <Tooltip
@@ -603,7 +604,7 @@ export function CyclePage() {
               <ResponsiveContainer width="100%" height={150}>
                 <ComposedChart data={chartData} margin={{ top: 5, right: 40, bottom: 0, left: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => format(parseISO(v), granularity === 'Year' ? 'd/M' : 'd')} />
                   <YAxis yAxisId="rhr" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} domain={['dataMin - 5', 'dataMax + 5']} label={{ value: 'RHR (bpm)', angle: -90, position: 'insideLeft', fontSize: 9, fill: '#6b7280', offset: 10 }} />
                   <YAxis yAxisId="score" orientation="right" domain={[0, 100]} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} label={{ value: 'Score', angle: 90, position: 'insideRight', fontSize: 9, fill: '#6b7280', offset: 10 }} />
                   <Tooltip
