@@ -33,6 +33,7 @@ export interface PlannedWorkout {
   notes: string | null;
   recurrence: Recurrence;
   recurrence_group_id: string | null;
+  garmin_workout_id: string | null;
 }
 
 export type CreatePlannedWorkoutPayload = Omit<PlannedWorkout, 'id' | 'recurrence_group_id'> & {

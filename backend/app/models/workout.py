@@ -116,6 +116,7 @@ class PlannedWorkoutORM(Base):
     notes: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     recurrence: Mapped[str] = mapped_column(String(20), nullable=False, default="none")
     recurrence_group_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    garmin_workout_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     actual_workouts: Mapped[List["ActualWorkoutORM"]] = relationship(
         "ActualWorkoutORM", back_populates="planned_workout"
@@ -453,6 +454,7 @@ class PlannedWorkoutUpdate(BaseModel):
 class PlannedWorkoutRead(PlannedWorkoutBase):
     id: int
     recurrence_group_id: Optional[str] = None
+    garmin_workout_id: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

@@ -18,8 +18,8 @@ import {
   closestCenter,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { format, addDays, addWeeks, subWeeks, startOfWeek, isToday, parseISO } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
+import { format, addDays, addWeeks, subWeeks, startOfWeek, isToday, parseISO, nextMonday } from 'date-fns';
+import { ChevronLeft, ChevronRight, Plus, RefreshCw, Watch } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import type {
@@ -197,6 +197,9 @@ export function WeekStrip({ onWeekChange, onSyncComplete }: WeekStripProps) {
   const { schedule, setSchedule, loading, error, load } = useWeekSchedule(weekStart);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [pushingWeek, setPushingWeek] = useState(false);
+  const [flushPrevious, setFlushPrevious] = useState(true);
+  const [pushMsg, setPushMsg] = useState<string | null>(null);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -260,6 +263,28 @@ export function WeekStrip({ onWeekChange, onSyncComplete }: WeekStripProps) {
       setSyncMsg('Sync failed — check backend logs.');
     } finally {
       setSyncing(false);
+    }
+  }
+
+  // Push next week's workouts to Garmin
+  async function handlePushWeek() {
+    setPushingWeek(true);
+    setPushMsg(null);
+    try {
+      const nextWeek = nextMonday(new Date());
+      const weekStartStr = format(nextWeek, 'yyyy-MM-dd');
+      const result = await scheduleApi.pushWeekToGarmin(weekStartStr, flushPrevious);
+      const parts = [`⌚ ${result.pushed} pushed`];
+      if (result.skipped > 0) parts.push(`${result.skipped} skipped`);
+      if (result.flushed > 0) parts.push(`${result.flushed} old removed`);
+      if (result.errors > 0) parts.push(`${result.errors} errors`);
+      setPushMsg(parts.join(' · '));
+      // Refresh to show garmin badge on any current-view workouts that were pushed
+      load(weekStart);
+    } catch (e) {
+      setPushMsg(e instanceof Error ? e.message : 'Push failed');
+    } finally {
+      setPushingWeek(false);
     }
   }
 
@@ -413,11 +438,36 @@ export function WeekStrip({ onWeekChange, onSyncComplete }: WeekStripProps) {
 
         <div className="flex items-center gap-2">
           {syncMsg && <p className="text-[11px] text-gray-500">{syncMsg}</p>}
+          {pushMsg && <p className="text-[11px] text-gray-500">{pushMsg}</p>}
           {schedule?.last_sync && (
             <p className="text-[11px] text-gray-400">
               Last sync: {format(parseISO(schedule.last_sync), 'HH:mm')}
             </p>
           )}
+          {/* Push next week to Garmin */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handlePushWeek}
+              disabled={pushingWeek}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/60 border border-white/50 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/5 hover:border-[var(--color-accent)]/30 transition-colors disabled:opacity-50"
+              title={`Push next week's workouts to Garmin${flushPrevious ? ' (removes last week)' : ''}`}
+            >
+              <Watch size={12} className={pushingWeek ? 'animate-pulse' : ''} />
+              Push next week
+            </button>
+            <label
+              className="flex items-center gap-1 text-[11px] text-gray-400 cursor-pointer select-none"
+              title="Remove last week's Garmin workouts when pushing"
+            >
+              <input
+                type="checkbox"
+                checked={flushPrevious}
+                onChange={(e) => setFlushPrevious(e.target.checked)}
+                className="w-3 h-3 rounded accent-[var(--color-accent)]"
+              />
+              flush old
+            </label>
+          </div>
           <button
             onClick={handleSync}
             disabled={syncing}

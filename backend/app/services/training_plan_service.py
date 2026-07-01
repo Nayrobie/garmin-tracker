@@ -368,6 +368,14 @@ def generate_training_plan(
             if long_km > s.max_long_run_km:
                 long_km = s.max_long_run_km
 
+        # TODO: implement goal-specific workout structures for 'maintain',
+        # 'improve_pace', and 'lower_bpm' plans — e.g. dedicated tempo runs for
+        # 'improve_pace', HR-capped aerobic blocks for 'lower_bpm', and a reduced
+        # but consistent set of interval sessions for 'maintain'. Currently all
+        # three goals fall back to simple easy/aerobic run descriptions for the
+        # short slot and share the same long-run and strength workout pool.
+        # To implement in their own script not all plan in this file
+
         # Alternate short run type: intervals on even weeks, easy on odd
         # (taper/race weeks are always easy; lower_bpm never does intervals)
         is_interval_week = (

@@ -3,7 +3,7 @@
  * Unified view correlating sleep quality with cycle phases.
  */
 import { useEffect, useState, useCallback } from 'react';
-import { format, parseISO, startOfMonth, endOfMonth, subMonths, addMonths, startOfYear, endOfYear, isSameMonth, differenceInDays, addDays } from 'date-fns';
+import { format, parseISO, subMonths, addMonths, startOfYear, endOfYear, isSameMonth, differenceInDays, addDays } from 'date-fns';
 import { Moon, RefreshCw, ChevronLeft, ChevronRight, Heart, Droplets } from 'lucide-react';
 import {
   ComposedChart,
@@ -301,7 +301,8 @@ export function CyclePage() {
     if (g === 'Year') {
       return { start: format(startOfYear(d), 'yyyy-MM-dd'), end: format(endOfYear(d), 'yyyy-MM-dd') };
     }
-    return { start: format(startOfMonth(d), 'yyyy-MM-dd'), end: format(endOfMonth(d), 'yyyy-MM-dd') };
+    // Month: rolling 30-day window ending at anchor date
+    return { start: format(subMonths(d, 1), 'yyyy-MM-dd'), end: format(d, 'yyyy-MM-dd') };
   }, []);
 
   const loadData = useCallback((g: Granularity, d: Date) => {
@@ -326,7 +327,10 @@ export function CyclePage() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      await sleepApi.sync(granularity === 'Year' ? 365 : 60);
+      await Promise.all([
+        sleepApi.sync(granularity === 'Year' ? 365 : 60),
+        sleepApi.syncCycles(),
+      ]);
       loadData(granularity, anchor);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sync failed');
@@ -343,7 +347,9 @@ export function CyclePage() {
     ? isSameMonth(anchor, new Date())
     : anchor.getFullYear() === new Date().getFullYear();
 
-  const periodLabel = granularity === 'Year' ? format(anchor, 'yyyy') : format(anchor, 'MMMM yyyy');
+  const periodLabel = granularity === 'Year'
+    ? format(anchor, 'yyyy')
+    : `${format(subMonths(anchor, 1), 'MMM d')} – ${format(anchor, 'MMM d, yyyy')}`;
 
   // Chart data: oldest first (records from API are already ascending)
   const chartData = [...records].map((r) => ({
@@ -421,7 +427,7 @@ export function CyclePage() {
 
     // Days until next period
     const daysUntilNext = Math.max(0, cycleLen - dayNum + 1);
-    const nextPeriod = addDays(cycleStart, cycleLen);
+    const nextPeriod = addDays(today, daysUntilNext);
 
     // Phase segments for timeline (proportional widths)
     const segments = [

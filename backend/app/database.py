@@ -1,9 +1,19 @@
 """SQLAlchemy database setup."""
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./garmin_tracker.db")
+# Load .env early — database.py is imported before config.py runs load_dotenv,
+# so we must do it here to ensure DATABASE_URL is resolved correctly.
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+load_dotenv(_PROJECT_ROOT / ".env")
+
+# Use an absolute path so the DB file is always at backend/garmin_tracker.db
+# regardless of the working directory uvicorn is launched from.
+_BACKEND_DIR = Path(__file__).parent.parent
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{_BACKEND_DIR / 'garmin_tracker.db'}")
 
 engine = create_engine(
     DATABASE_URL,
@@ -65,3 +75,11 @@ def _migrate_user_settings() -> None:
                 conn.commit()
             except Exception:
                 pass  # Column already exists
+
+    # planned_workouts migrations
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE planned_workouts ADD COLUMN garmin_workout_id TEXT"))
+            conn.commit()
+        except Exception:
+            pass  # Column already exists

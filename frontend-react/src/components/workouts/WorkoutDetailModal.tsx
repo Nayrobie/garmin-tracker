@@ -5,11 +5,13 @@
  * - Planned: shows goal vs actual comparison; delete-single and delete-series options.
  */
 import { format, parseISO } from 'date-fns';
-import { Trash2, RepeatIcon } from 'lucide-react';
+import { Trash2, RepeatIcon, Watch } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import type { ActualWorkout, PlannedWorkout } from '../../types';
 import { typeIcon, typeLabel, typeColor, formatDuration, rpeColors } from './workoutUtils.tsx';
+import { scheduleApi } from '../../api/schedule';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -54,6 +56,17 @@ export function WorkoutDetailModal({
   onDelete,
   onDeleteGroup,
 }: WorkoutDetailModalProps) {
+  // All hooks must come before any conditional returns
+  const [garminId, setGarminId] = useState<string | null>(planned?.garmin_workout_id ?? null);
+  const [pushing, setPushing] = useState(false);
+  const [pushError, setPushError] = useState<string | null>(null);
+
+  // Reset when a different planned workout is opened
+  useEffect(() => {
+    setGarminId(planned?.garmin_workout_id ?? null);
+    setPushError(null);
+  }, [planned?.id, planned?.garmin_workout_id]);
+
   const activity = actual ?? planned;
   if (!activity) return null;
 
@@ -62,6 +75,27 @@ export function WorkoutDetailModal({
   const title = actual?.name ?? typeLabel[type];
   const dateStr = format(parseISO(activity.date), 'EEEE d MMMM yyyy');
   const isRecurring = planned?.recurrence && planned.recurrence !== 'none';
+
+  const pushableTypes = new Set(['run', 'cycle', 'strength']);
+  const isPushable = planned && pushableTypes.has(planned.type) && planned.goal_duration_min != null;
+
+  async function handlePush() {
+    if (!planned) return;
+    setPushing(true);
+    setPushError(null);
+    try {
+      const res = await scheduleApi.pushWorkoutToGarmin(planned.id);
+      if (res.garmin_workout_id) {
+        setGarminId(res.garmin_workout_id);
+      } else if (res.status.startsWith('error')) {
+        setPushError(res.status.replace('error:', ''));
+      }
+    } catch (e) {
+      setPushError(e instanceof Error ? e.message : 'Push failed');
+    } finally {
+      setPushing(false);
+    }
+  }
 
   return (
     <Modal open={open} onClose={onClose} title={title} maxWidth="max-w-md">
@@ -142,7 +176,29 @@ export function WorkoutDetailModal({
               </Button>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            {/* Garmin push */}
+            {isPushable && !garminId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handlePush}
+                loading={pushing}
+                className="text-[var(--color-accent)] hover:bg-[var(--color-accent)]/5 border border-[var(--color-accent)]/30"
+              >
+                <Watch size={13} className="mr-1" />
+                Push to Garmin
+              </Button>
+            )}
+            {isPushable && garminId && (
+              <span className="flex items-center gap-1 text-xs font-medium text-green-600 px-2 py-1 rounded-lg bg-green-50">
+                <Watch size={12} />
+                On Garmin
+              </span>
+            )}
+            {pushError && (
+              <span className="text-xs text-red-500">{pushError}</span>
+            )}
             <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
             {planned && onEdit && (
               <Button size="sm" onClick={() => { onClose(); onEdit(); }}>Edit</Button>

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -739,3 +740,336 @@ def _day_to_phase(day: int, period_length: int) -> str:
     if day <= 16:
         return "ovulation"
     return "luteal"
+
+
+# ---------------------------------------------------------------------------
+# Garmin Workout Upload (planned → Garmin Connect)
+# ---------------------------------------------------------------------------
+
+# WorkoutTypes that can be pushed to Garmin (others silently skipped)
+_PUSHABLE_TYPES: frozenset[str] = frozenset({"run", "cycle", "strength"})
+
+
+def _pace_str_to_mps(pace_str: str) -> float | None:
+    """Convert a pace string like "5:30" (min:sec per km) to metres per second.
+
+    Args:
+        pace_str: Pace in "MM:SS" format.
+
+    Returns:
+        Speed in m/s, or None if parsing fails.
+    """
+    try:
+        parts = pace_str.strip().split(":")
+        secs_per_km = int(parts[0]) * 60 + int(parts[1])
+        return 1000 / secs_per_km if secs_per_km > 0 else None
+    except (IndexError, ValueError, ZeroDivisionError):
+        return None
+
+
+def _build_garmin_workout(planned: "PlannedWorkoutORM") -> Any:
+    """Build a garminconnect typed workout model from a PlannedWorkoutORM.
+
+    Creates a single timed step (the full workout duration) with an optional
+    pace target derived from goal_pace_per_km.  Only run, cycle, and strength
+    types are supported.
+
+    Args:
+        planned: Planned workout ORM row.
+
+    Returns:
+        A garminconnect BaseWorkout subclass instance, or None if the type
+        is not pushable or the duration is missing.
+    """
+    from garminconnect.workout import (  # type: ignore[import]
+        CyclingWorkout,
+        ExecutableStep,
+        FitnessEquipmentWorkout,
+        RunningWorkout,
+        StepType,
+        ConditionType,
+        TargetType,
+        WorkoutSegment,
+    )
+
+    workout_type = planned.type.value if hasattr(planned.type, "value") else planned.type
+    if workout_type not in _PUSHABLE_TYPES:
+        return None
+
+    duration_secs = (planned.goal_duration_min or 0) * 60
+    if duration_secs <= 0:
+        return None
+
+    # Build optional pace target band (±5 s/km tolerance around goal pace)
+    target_type_dict: dict[str, Any] | None = None
+    if workout_type == "run" and planned.goal_pace_per_km:
+        mps = _pace_str_to_mps(planned.goal_pace_per_km)
+        if mps:
+            tolerance = 1000 / ((_pace_str_to_mps.__doc__ and 0) or 1)  # dummy
+            tol_mps = 0.08  # ~±5 sec/km
+            target_type_dict = {
+                "workoutTargetTypeId": TargetType.PACE_ZONE,
+                "workoutTargetTypeKey": "pace.zone",
+                "displayOrder": 6,
+                "targetValueOne": mps - tol_mps,
+                "targetValueTwo": mps + tol_mps,
+            }
+
+    no_target = {
+        "workoutTargetTypeId": TargetType.NO_TARGET,
+        "workoutTargetTypeKey": "no.target",
+        "displayOrder": 1,
+    }
+
+    step = ExecutableStep(
+        stepOrder=1,
+        stepType={
+            "stepTypeId": StepType.INTERVAL,
+            "stepTypeKey": "interval",
+            "displayOrder": 3,
+        },
+        endCondition={
+            "conditionTypeId": ConditionType.TIME,
+            "conditionTypeKey": "time",
+            "displayOrder": 2,
+            "displayable": True,
+        },
+        endConditionValue=float(duration_secs),
+        targetType=target_type_dict or no_target,
+    )
+
+    sport_type_run = {"sportTypeId": 1, "sportTypeKey": "running"}
+    sport_type_cycle = {"sportTypeId": 2, "sportTypeKey": "cycling"}
+    sport_type_strength = {"sportTypeId": 5, "sportTypeKey": "strength_training"}
+
+    segment_sport = {
+        "run": sport_type_run,
+        "cycle": sport_type_cycle,
+        "strength": sport_type_strength,
+    }[workout_type]
+
+    workout_classes = {
+        "run": RunningWorkout,
+        "cycle": CyclingWorkout,
+        "strength": FitnessEquipmentWorkout,
+    }
+    cls = workout_classes[workout_type]
+
+    workout_name = planned.notes.splitlines()[0][:80] if planned.notes else ""
+    if not workout_name:
+        type_labels = {"run": "Run", "cycle": "Cycle", "strength": "Strength"}
+        duration_label = f"{planned.goal_duration_min}min" if planned.goal_duration_min else ""
+        workout_name = f"{type_labels[workout_type]} {duration_label}".strip()
+
+    return cls(
+        workoutName=workout_name,
+        estimatedDurationInSecs=duration_secs,
+        workoutSegments=[
+            WorkoutSegment(
+                segmentOrder=1,
+                sportType=segment_sport,
+                workoutSteps=[step],
+            )
+        ],
+    )
+
+
+def push_planned_workout(planned_id: int, db: Session) -> dict:
+    """Upload a single planned workout to Garmin Connect and schedule it.
+
+    Skips the upload if the workout already has a garmin_workout_id (idempotent).
+    Updates the planned workout row with the returned garmin_workout_id.
+
+    Args:
+        planned_id: Primary key of the PlannedWorkoutORM row.
+        db: Active database session.
+
+    Returns:
+        Dict with ``garmin_workout_id`` and ``status`` keys.
+    """
+    from app.models.workout import PlannedWorkoutORM
+
+    planned = db.get(PlannedWorkoutORM, planned_id)
+    if planned is None:
+        return {"garmin_workout_id": None, "status": "not_found"}
+
+    if planned.garmin_workout_id:
+        return {"garmin_workout_id": planned.garmin_workout_id, "status": "already_pushed"}
+
+    workout_type = planned.type.value if hasattr(planned.type, "value") else planned.type
+    if workout_type not in _PUSHABLE_TYPES:
+        return {"garmin_workout_id": None, "status": f"skipped:{workout_type}"}
+
+    if not GARMIN_EMAIL or not GARMIN_PASSWORD:
+        return {"garmin_workout_id": None, "status": "error:no_credentials"}
+
+    try:
+        from garminconnect import Garmin  # type: ignore[import]
+    except ImportError:
+        return {"garmin_workout_id": None, "status": "error:garminconnect_not_installed"}
+
+    garmin_workout = _build_garmin_workout(planned)
+    if garmin_workout is None:
+        return {"garmin_workout_id": None, "status": "error:could_not_build_workout"}
+
+    try:
+        token_store = str(Path.home() / ".garminconnect")
+        client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
+        client.login(token_store)
+    except Exception as exc:
+        logger.exception("Garmin login failed during workout push")
+        return {"garmin_workout_id": None, "status": f"error:login_failed:{exc}"}
+
+    try:
+        upload_fn_map = {
+            "run": client.upload_running_workout,
+            "cycle": client.upload_cycling_workout,
+            "strength": client.upload_fitness_equipment_workout,
+        }
+        upload_fn = upload_fn_map[workout_type]
+        result = upload_fn(garmin_workout)
+        garmin_id = str(
+            result.get("workoutId") or result.get("workout", {}).get("workoutId", "")
+        )
+        if not garmin_id:
+            return {"garmin_workout_id": None, "status": "error:no_workout_id_in_response"}
+
+        client.schedule_workout(garmin_id, planned.date.isoformat())
+
+        planned.garmin_workout_id = garmin_id
+        db.commit()
+
+        logger.info("Pushed planned workout %d → Garmin workoutId %s", planned_id, garmin_id)
+        return {"garmin_workout_id": garmin_id, "status": "pushed"}
+
+    except Exception as exc:
+        logger.exception("Garmin workout upload failed for planned_id=%d", planned_id)
+        return {"garmin_workout_id": None, "status": f"error:{exc}"}
+
+
+def push_week_to_garmin(
+    week_start: date, db: Session, *, flush_previous: bool = True
+) -> dict:
+    """Upload all planned workouts for a given week to Garmin Connect.
+
+    Optionally flushes (deletes from Garmin) any workouts from the previous
+    week that were previously pushed.
+
+    Args:
+        week_start: Monday of the target week.
+        db: Active database session.
+        flush_previous: If True, delete the previous week's pushed workouts
+            from Garmin Connect before uploading the new week.
+
+    Returns:
+        Dict with ``pushed``, ``skipped``, ``flushed``, and ``errors`` counts.
+    """
+    from app.models.workout import PlannedWorkoutORM
+
+    flushed = 0
+    flush_errors = 0
+
+    if flush_previous:
+        prev_week_start = week_start - timedelta(days=7)
+        prev_week_end = week_start - timedelta(days=1)
+        flush_result = flush_garmin_workouts_for_range(
+            prev_week_start, prev_week_end, db
+        )
+        flushed = flush_result["flushed"]
+        flush_errors = flush_result.get("errors", 0)
+
+    week_end = week_start + timedelta(days=6)
+    planned_rows = (
+        db.query(PlannedWorkoutORM)
+        .filter(
+            PlannedWorkoutORM.date >= week_start,
+            PlannedWorkoutORM.date <= week_end,
+        )
+        .order_by(PlannedWorkoutORM.date)
+        .all()
+    )
+
+    pushed = skipped = errors = 0
+    for row in planned_rows:
+        result = push_planned_workout(row.id, db)
+        s = result["status"]
+        if s == "pushed":
+            pushed += 1
+        elif s.startswith("error"):
+            errors += 1
+            logger.warning("Push failed for planned_id=%d: %s", row.id, s)
+        else:
+            skipped += 1
+
+    return {
+        "pushed": pushed,
+        "skipped": skipped,
+        "flushed": flushed,
+        "flush_errors": flush_errors,
+        "errors": errors,
+    }
+
+
+def flush_garmin_workouts_for_range(
+    start: date, end: date, db: Session
+) -> dict:
+    """Delete all previously-pushed Garmin workouts for a date range.
+
+    Removes the workout from Garmin Connect's workout library (which also
+    removes it from the calendar) and clears the garmin_workout_id on the
+    local planned workout row.
+
+    Args:
+        start: Inclusive start date.
+        end: Inclusive end date.
+        db: Active database session.
+
+    Returns:
+        Dict with ``flushed`` and ``errors`` counts.
+    """
+    from app.models.workout import PlannedWorkoutORM
+
+    rows = (
+        db.query(PlannedWorkoutORM)
+        .filter(
+            PlannedWorkoutORM.date >= start,
+            PlannedWorkoutORM.date <= end,
+            PlannedWorkoutORM.garmin_workout_id.isnot(None),
+        )
+        .all()
+    )
+
+    if not rows:
+        return {"flushed": 0, "errors": 0}
+
+    if not GARMIN_EMAIL or not GARMIN_PASSWORD:
+        return {"flushed": 0, "errors": len(rows), "detail": "no_credentials"}
+
+    try:
+        from garminconnect import Garmin  # type: ignore[import]
+    except ImportError:
+        return {"flushed": 0, "errors": len(rows), "detail": "garminconnect_not_installed"}
+
+    try:
+        token_store = str(Path.home() / ".garminconnect")
+        client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
+        client.login(token_store)
+    except Exception as exc:
+        return {"flushed": 0, "errors": len(rows), "detail": f"login_failed:{exc}"}
+
+    flushed = errors = 0
+    for row in rows:
+        try:
+            client.delete_workout(row.garmin_workout_id)
+            row.garmin_workout_id = None
+            flushed += 1
+        except Exception as exc:
+            logger.warning(
+                "Failed to delete Garmin workout %s: %s", row.garmin_workout_id, exc
+            )
+            row.garmin_workout_id = None  # Clear locally even if remote delete failed
+            errors += 1
+
+    db.commit()
+    logger.info("Flush complete: %d deleted, %d errors.", flushed, errors)
+    return {"flushed": flushed, "errors": errors}

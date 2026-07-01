@@ -18,7 +18,7 @@ Edit `.env` with your Garmin Connect credentials and any other settings.
 ### Run
 
 ```bash
-python -m uvicorn app.main:app --reload
+poetry run uvicorn app.main:app --reload --port 8000
 ```
 
 The API will be available at `http://localhost:8000`. OpenAPI docs: `http://localhost:8000/docs`

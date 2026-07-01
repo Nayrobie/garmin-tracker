@@ -77,9 +77,7 @@ poetry run uvicorn app.main:app --reload --port 8000
 
 ### Frontend
 ```bash
-cd frontend-react
-npm install
-npm run dev
+cd frontend-react && npm install && npm run dev
 # → http://localhost:5173
 ```
 

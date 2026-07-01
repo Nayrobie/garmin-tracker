@@ -37,6 +37,9 @@ from app.models.workout import (
 )
 from app.services.body_composition_service import BodyCompositionRecord, load_body_composition
 from app.services.garmin_service import (
+    flush_garmin_workouts_for_range,
+    push_planned_workout,
+    push_week_to_garmin,
     sync_garmin_activities,
     sync_garmin_sleep,
     sync_hrv_and_cycle_day,
@@ -394,6 +397,64 @@ def get_sync_status(db: Session = Depends(get_db)) -> dict:
     """Return the last Garmin sync timestamp."""
     sync_state = db.get(GarminSyncStateORM, 1)
     return {"last_sync": sync_state.last_sync_at if sync_state else None}
+
+
+@router.post("/workouts/planned/{planned_id}/push-to-garmin")
+def push_single_workout_to_garmin(
+    planned_id: int, db: Session = Depends(get_db)
+) -> dict:
+    """Upload a single planned workout to Garmin Connect and schedule it.
+
+    Idempotent: if the workout was already pushed, returns the existing ID.
+
+    Args:
+        planned_id: Primary key of the planned workout.
+        db: Database session.
+
+    Returns:
+        Dict with ``garmin_workout_id`` and ``status``.
+
+    Raises:
+        HTTPException: 404 if workout not found.
+    """
+    planned = db.get(PlannedWorkoutORM, planned_id)
+    if planned is None:
+        raise HTTPException(status_code=404, detail="Planned workout not found")
+    result = push_planned_workout(planned_id, db)
+    if result["status"] == "not_found":
+        raise HTTPException(status_code=404, detail="Planned workout not found")
+    return result
+
+
+@router.post("/garmin/push-week")
+def push_week(
+    week_start: Optional[str] = None,
+    flush_previous: bool = True,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Upload all planned workouts for a given week to Garmin Connect.
+
+    Optionally flushes workouts from the previous week that were previously
+    pushed (enabled by default).
+
+    Args:
+        week_start: ISO date (YYYY-MM-DD) of the Monday of the target week.
+            Defaults to next week's Monday.
+        flush_previous: If True, delete previous-week pushed workouts from
+            Garmin before uploading. Defaults to True.
+        db: Database session.
+
+    Returns:
+        Dict with ``pushed``, ``skipped``, ``flushed``, and ``errors`` counts.
+    """
+    if week_start:
+        ws = date.fromisoformat(week_start)
+    else:
+        today = date.today()
+        # Default: next week's Monday
+        days_to_next_monday = (7 - today.weekday()) % 7 or 7
+        ws = today + timedelta(days=days_to_next_monday)
+    return push_week_to_garmin(ws, db, flush_previous=flush_previous)
 
 
 # ---------------------------------------------------------------------------

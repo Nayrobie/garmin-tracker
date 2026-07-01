@@ -85,4 +85,23 @@ export const scheduleApi = {
       method: 'POST',
     });
   },
+
+  /** Push a single planned workout to Garmin Connect. Idempotent. */
+  pushWorkoutToGarmin: (id: number): Promise<{ garmin_workout_id: string | null; status: string }> =>
+    request(`/workouts/planned/${id}/push-to-garmin`, { method: 'POST' }),
+
+  /**
+   * Upload all planned workouts for a week to Garmin Connect.
+   * @param weekStart  Monday of the target week (YYYY-MM-DD). Defaults to next Monday.
+   * @param flushPrevious  Delete previous week's pushed workouts first (default true).
+   */
+  pushWeekToGarmin: (
+    weekStart?: string,
+    flushPrevious: boolean = true,
+  ): Promise<{ pushed: number; skipped: number; flushed: number; errors: number }> => {
+    const params = new URLSearchParams();
+    if (weekStart) params.set('week_start', weekStart);
+    params.set('flush_previous', String(flushPrevious));
+    return request(`/garmin/push-week?${params.toString()}`, { method: 'POST' });
+  },
 };

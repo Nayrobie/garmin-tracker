@@ -26,7 +26,7 @@ The dev server proxies `/api/*` requests to `http://localhost:8000` (see `vite.c
 **Start the FastAPI backend in another terminal:**
 ```bash
 cd ../backend
-python -m uvicorn app.main:app --reload
+poetry run uvicorn app.main:app --reload --port 8000
 ```
 
 ## Stack
