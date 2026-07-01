@@ -189,6 +189,7 @@ def get_week_schedule(
 
     sync_state = db.get(GarminSyncStateORM, 1)
     last_sync = sync_state.last_sync_at if sync_state else None
+    last_pushed = sync_state.last_pushed_at if sync_state else None
 
     days = [
         DaySchedule(
@@ -205,7 +206,7 @@ def get_week_schedule(
         for i in range(7)
     ]
 
-    return WeeklySchedule(week_start=week_start, days=days, last_sync=last_sync)
+    return WeeklySchedule(week_start=week_start, days=days, last_sync=last_sync, last_pushed=last_pushed)
 
 
 @router.post("/schedule/workout", response_model=PlannedWorkoutRead, status_code=201)
@@ -394,9 +395,12 @@ def trigger_garmin_sync(
 
 @router.get("/garmin/sync/status")
 def get_sync_status(db: Session = Depends(get_db)) -> dict:
-    """Return the last Garmin sync timestamp."""
+    """Return the last Garmin sync and push timestamps."""
     sync_state = db.get(GarminSyncStateORM, 1)
-    return {"last_sync": sync_state.last_sync_at if sync_state else None}
+    return {
+        "last_sync": sync_state.last_sync_at if sync_state else None,
+        "last_pushed": sync_state.last_pushed_at if sync_state else None,
+    }
 
 
 @router.post("/workouts/planned/{planned_id}/push-to-garmin")
@@ -429,19 +433,17 @@ def push_single_workout_to_garmin(
 @router.post("/garmin/push-week")
 def push_week(
     week_start: Optional[str] = None,
-    flush_previous: bool = True,
     db: Session = Depends(get_db),
 ) -> dict:
     """Upload all planned workouts for a given week to Garmin Connect.
 
-    Optionally flushes workouts from the previous week that were previously
-    pushed (enabled by default).
+    Always flushes the target week first (idempotent re-push). The
+    previous-week flush is controlled by the ``flush_garmin_on_push``
+    user setting (see Settings page).
 
     Args:
         week_start: ISO date (YYYY-MM-DD) of the Monday of the target week.
-            Defaults to next week's Monday.
-        flush_previous: If True, delete previous-week pushed workouts from
-            Garmin before uploading. Defaults to True.
+            Defaults to the current week's Monday.
         db: Database session.
 
     Returns:
@@ -451,10 +453,8 @@ def push_week(
         ws = date.fromisoformat(week_start)
     else:
         today = date.today()
-        # Default: next week's Monday
-        days_to_next_monday = (7 - today.weekday()) % 7 or 7
-        ws = today + timedelta(days=days_to_next_monday)
-    return push_week_to_garmin(ws, db, flush_previous=flush_previous)
+        ws = today - timedelta(days=today.weekday())  # current week's Monday
+    return push_week_to_garmin(ws, db)
 
 
 # ---------------------------------------------------------------------------

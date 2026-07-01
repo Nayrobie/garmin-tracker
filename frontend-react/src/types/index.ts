@@ -68,6 +68,7 @@ export interface WeeklySchedule {
   week_start: string;
   days: DaySchedule[];
   last_sync: string | null;
+  last_pushed: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -239,6 +240,9 @@ export interface UserSettings {
   // Schedule extras
   rest_day: number;
   complementary_workouts_per_week: number;
+
+  // Garmin
+  flush_garmin_on_push: boolean;
 }
 
 export type UserSettingsUpdate = Partial<UserSettings>;

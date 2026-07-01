@@ -60,7 +60,7 @@ export const scheduleApi = {
     return request(`/garmin/sync${qs}`, { method: 'POST' });
   },
 
-  getSyncStatus: (): Promise<{ last_sync: string | null }> =>
+  getSyncStatus: (): Promise<{ last_sync: string | null; last_pushed: string | null }> =>
     request('/garmin/sync/status'),
 
   /** Generate a progressive multi-week training plan. */
@@ -92,16 +92,14 @@ export const scheduleApi = {
 
   /**
    * Upload all planned workouts for a week to Garmin Connect.
-   * @param weekStart  Monday of the target week (YYYY-MM-DD). Defaults to next Monday.
-   * @param flushPrevious  Delete previous week's pushed workouts first (default true).
+   * Always flushes the target week first (idempotent).
+   * @param weekStart  Monday of the target week (YYYY-MM-DD). Defaults to current Monday.
    */
   pushWeekToGarmin: (
     weekStart?: string,
-    flushPrevious: boolean = true,
   ): Promise<{ pushed: number; skipped: number; flushed: number; errors: number }> => {
     const params = new URLSearchParams();
     if (weekStart) params.set('week_start', weekStart);
-    params.set('flush_previous', String(flushPrevious));
     return request(`/garmin/push-week?${params.toString()}`, { method: 'POST' });
   },
 };

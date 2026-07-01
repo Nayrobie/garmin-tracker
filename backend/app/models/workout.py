@@ -169,6 +169,7 @@ class GarminSyncStateORM(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     last_sync_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_pushed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +331,9 @@ class UserSettingsORM(Base):
     goal_pace_start: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, default=None)
     goal_pace_target: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, default=None)
 
+    # Garmin push behaviour
+    flush_garmin_on_push: Mapped[bool] = mapped_column(Boolean, default=True)
+
 
 # ---------------------------------------------------------------------------
 # Pydantic schemas — User Settings
@@ -382,6 +386,9 @@ class UserSettingsRead(BaseModel):
     goal_pace_start: Optional[str]
     goal_pace_target: Optional[str]
 
+    # Garmin
+    flush_garmin_on_push: bool
+
     model_config = {"from_attributes": True}
 
 
@@ -423,6 +430,7 @@ class UserSettingsUpdate(BaseModel):
     goal_hr_avg_bpm: Optional[int] = None
     goal_pace_start: Optional[str] = None
     goal_pace_target: Optional[str] = None
+    flush_garmin_on_push: Optional[bool] = None
 
 
 # ---------------------------------------------------------------------------
@@ -502,6 +510,7 @@ class WeeklySchedule(BaseModel):
     week_start: DateType
     days: List[DaySchedule]
     last_sync: Optional[datetime]
+    last_pushed: Optional[datetime]
 
 
 # ---------------------------------------------------------------------------

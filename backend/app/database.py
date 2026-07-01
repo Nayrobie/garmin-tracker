@@ -67,6 +67,7 @@ def _migrate_user_settings() -> None:
         ("goal_hr_avg_bpm", "INTEGER"),
         ("goal_pace_start", "TEXT"),
         ("goal_pace_target", "TEXT"),
+        ("flush_garmin_on_push", "INTEGER DEFAULT 1"),
     ]
     with engine.connect() as conn:
         for col_name, col_def in new_columns:
@@ -80,6 +81,14 @@ def _migrate_user_settings() -> None:
     with engine.connect() as conn:
         try:
             conn.execute(text("ALTER TABLE planned_workouts ADD COLUMN garmin_workout_id TEXT"))
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
+
+    # garmin_sync_state migrations
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE garmin_sync_state ADD COLUMN last_pushed_at DATETIME"))
             conn.commit()
         except Exception:
             pass  # Column already exists

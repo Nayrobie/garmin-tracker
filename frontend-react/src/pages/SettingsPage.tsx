@@ -452,6 +452,43 @@ export function SettingsPage() {
           </div>
         </Field>
       </Card>
+
+      {/* ── Garmin ── */}
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-700 tracking-wide uppercase">Garmin</h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Controls behaviour when pushing workouts to Garmin Connect.
+            </p>
+          </div>
+          <SaveButton
+            state={saveStates['garmin'] ?? 'idle'}
+            onClick={() => saveSection('garmin', { flush_garmin_on_push: settings.flush_garmin_on_push })}
+          />
+        </div>
+        <label className="flex items-center gap-3 cursor-pointer" onClick={() => update('flush_garmin_on_push', !settings.flush_garmin_on_push)}>
+          <div
+            className={[
+              'relative w-9 h-5 rounded-full transition-colors flex-shrink-0',
+              settings.flush_garmin_on_push ? 'bg-[var(--color-accent)]' : 'bg-gray-200',
+            ].join(' ')}
+          >
+            <span
+              className={[
+                'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                settings.flush_garmin_on_push ? 'translate-x-4' : '',
+              ].join(' ')}
+            />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-gray-700 select-none">Flush last week on push</p>
+            <p className="text-[11px] text-gray-400 leading-snug">
+              When pushing this week, automatically delete last week's Garmin workouts first.
+            </p>
+          </div>
+        </label>
+      </Card>
     </div>
   );
 }

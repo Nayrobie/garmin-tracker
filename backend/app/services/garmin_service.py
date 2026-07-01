@@ -747,131 +747,199 @@ def _day_to_phase(day: int, period_length: int) -> str:
 # ---------------------------------------------------------------------------
 
 # WorkoutTypes that can be pushed to Garmin (others silently skipped)
-_PUSHABLE_TYPES: frozenset[str] = frozenset({"run", "cycle", "strength"})
+_PUSHABLE_TYPES: frozenset[str] = frozenset({"run", "cycle", "strength", "yoga", "pilates"})
+
+# Sport type dicts for the workout-creation API
+# (IDs confirmed by round-trip testing — differ from activity type IDs)
+_SPORT_TYPES: dict[str, dict] = {
+    "run":      {"sportTypeId": 1, "sportTypeKey": "running"},
+    "cycle":    {"sportTypeId": 2, "sportTypeKey": "cycling"},
+    "strength": {"sportTypeId": 5, "sportTypeKey": "strength_training"},
+    "yoga":     {"sportTypeId": 7, "sportTypeKey": "yoga"},
+    "pilates":  {"sportTypeId": 8, "sportTypeKey": "pilates"},
+}
+
+_COND_TIME: dict = {
+    "conditionTypeId": 2,
+    "conditionTypeKey": "time",
+    "displayOrder": 2,
+    "displayable": True,
+}
+
+_NO_TARGET: dict = {
+    "targetType": {
+        "workoutTargetTypeId": 1,
+        "workoutTargetTypeKey": "no.target",
+        "displayOrder": 1,
+    },
+    "targetValueOne": None,
+    "targetValueTwo": None,
+}
 
 
-def _pace_str_to_mps(pace_str: str) -> float | None:
-    """Convert a pace string like "5:30" (min:sec per km) to metres per second.
+def _speed_target(pace_str: str, tol_mps: float = 0.08) -> dict:
+    """Build a pace target displayed as MM:SS/km by Garmin.
+
+    Uses pace.zone target type with m/s values — Garmin converts to min/km
+    for display.
 
     Args:
-        pace_str: Pace in "MM:SS" format.
+        pace_str: Target pace in "MM:SS" per km format.
+        tol_mps: Tolerance band in m/s (±).
 
     Returns:
-        Speed in m/s, or None if parsing fails.
+        Target dict ready to be merged into a step dict.
     """
     try:
         parts = pace_str.strip().split(":")
         secs_per_km = int(parts[0]) * 60 + int(parts[1])
-        return 1000 / secs_per_km if secs_per_km > 0 else None
+        mps = 1000 / secs_per_km
+        return {
+            "targetType": {
+                "workoutTargetTypeId": 6,
+                "workoutTargetTypeKey": "pace.zone",
+                "displayOrder": 6,
+            },
+            "targetValueOne": round(mps - tol_mps, 4),
+            "targetValueTwo": round(mps + tol_mps, 4),
+        }
     except (IndexError, ValueError, ZeroDivisionError):
-        return None
+        return _NO_TARGET
 
 
-def _build_garmin_workout(planned: "PlannedWorkoutORM") -> Any:
-    """Build a garminconnect typed workout model from a PlannedWorkoutORM.
+def _make_step(
+    step_type_id: int,
+    step_type_key: str,
+    duration_secs: int,
+    target: dict | None = None,
+    order: int = 1,
+) -> dict:
+    """Build a raw ExecutableStepDTO dict.
 
-    Creates a single timed step (the full workout duration) with an optional
-    pace target derived from goal_pace_per_km.  Only run, cycle, and strength
-    types are supported.
+    Args:
+        step_type_id: Garmin step type integer (1=warmup, 2=cooldown, 3=interval, 4=recovery).
+        step_type_key: Matching key string.
+        duration_secs: Step duration in seconds.
+        target: Target dict from ``_pace_target()`` or ``_NO_TARGET``.
+        order: Step order within the segment or repeat group.
+
+    Returns:
+        Raw step dict compatible with Garmin's workout API.
+    """
+    step: dict = {
+        "type": "ExecutableStepDTO",
+        "stepOrder": order,
+        "stepType": {
+            "stepTypeId": step_type_id,
+            "stepTypeKey": step_type_key,
+            "displayOrder": step_type_id,
+        },
+        "endCondition": _COND_TIME,
+        "endConditionValue": float(duration_secs),
+    }
+    step.update(target or _NO_TARGET)
+    return step
+
+
+def _repeat_group(iterations: int, steps: list[dict], order: int) -> dict:
+    """Build a raw RepeatGroupDTO dict.
+
+    Args:
+        iterations: Number of repetitions.
+        steps: Inner steps (their stepOrder is overwritten to 1-based).
+        order: Position of this group within the outer segment.
+
+    Returns:
+        Raw repeat group dict compatible with Garmin's workout API.
+    """
+    return {
+        "type": "RepeatGroupDTO",
+        "stepOrder": order,
+        "stepType": {"stepTypeId": 6, "stepTypeKey": "repeat", "displayOrder": 6},
+        "numberOfIterations": iterations,
+        "workoutSteps": [
+            dict(s, **{"stepOrder": i + 1}) for i, s in enumerate(steps)
+        ],
+        "endCondition": {
+            "conditionTypeId": 7,
+            "conditionTypeKey": "iterations",
+            "displayOrder": 7,
+            "displayable": False,
+        },
+        "endConditionValue": float(iterations),
+        "smartRepeat": False,
+    }
+
+
+def _build_garmin_workout(planned: "PlannedWorkoutORM") -> dict | None:
+    """Build a raw workout payload dict for ``client.upload_workout()``.
+
+    Run workouts get structured steps (warmup + main, or warmup + repeat
+    group + cooldown for intervals) with pace.zone targets displayed as
+    min/km in Garmin Connect.  Strength, yoga, and pilates get a single
+    timed step with no target.
 
     Args:
         planned: Planned workout ORM row.
 
     Returns:
-        A garminconnect BaseWorkout subclass instance, or None if the type
-        is not pushable or the duration is missing.
+        Raw dict ready for ``client.upload_workout()``, or ``None`` if the
+        type is not pushable or the duration is missing.
     """
-    from garminconnect.workout import (  # type: ignore[import]
-        CyclingWorkout,
-        ExecutableStep,
-        FitnessEquipmentWorkout,
-        RunningWorkout,
-        StepType,
-        ConditionType,
-        TargetType,
-        WorkoutSegment,
-    )
-
-    workout_type = planned.type.value if hasattr(planned.type, "value") else planned.type
+    workout_type = planned.type.value if hasattr(planned.type, "value") else str(planned.type)
     if workout_type not in _PUSHABLE_TYPES:
         return None
 
-    duration_secs = (planned.goal_duration_min or 0) * 60
+    duration_secs = int((planned.goal_duration_min or 0) * 60)
     if duration_secs <= 0:
         return None
 
-    # Build optional pace target band (±5 s/km tolerance around goal pace)
-    target_type_dict: dict[str, Any] | None = None
-    if workout_type == "run" and planned.goal_pace_per_km:
-        mps = _pace_str_to_mps(planned.goal_pace_per_km)
-        if mps:
-            tolerance = 1000 / ((_pace_str_to_mps.__doc__ and 0) or 1)  # dummy
-            tol_mps = 0.08  # ~±5 sec/km
-            target_type_dict = {
-                "workoutTargetTypeId": TargetType.PACE_ZONE,
-                "workoutTargetTypeKey": "pace.zone",
-                "displayOrder": 6,
-                "targetValueOne": mps - tol_mps,
-                "targetValueTwo": mps + tol_mps,
-            }
+    sport = _SPORT_TYPES[workout_type]
 
-    no_target = {
-        "workoutTargetTypeId": TargetType.NO_TARGET,
-        "workoutTargetTypeKey": "no.target",
-        "displayOrder": 1,
-    }
+    notes = (planned.notes or "").strip()
+    name = notes.splitlines()[0][:80] if notes else f"{workout_type.title()} {planned.goal_duration_min}min"
 
-    step = ExecutableStep(
-        stepOrder=1,
-        stepType={
-            "stepTypeId": StepType.INTERVAL,
-            "stepTypeKey": "interval",
-            "displayOrder": 3,
-        },
-        endCondition={
-            "conditionTypeId": ConditionType.TIME,
-            "conditionTypeKey": "time",
-            "displayOrder": 2,
-            "displayable": True,
-        },
-        endConditionValue=float(duration_secs),
-        targetType=target_type_dict or no_target,
-    )
+    if workout_type in ("strength", "yoga", "pilates", "cycle"):
+        # Single timed step — no specific exercises or targets
+        steps: list[dict] = [_make_step(3, "interval", duration_secs, _NO_TARGET, order=1)]
+        estimated_secs = duration_secs
 
-    sport_type_run = {"sportTypeId": 1, "sportTypeKey": "running"}
-    sport_type_cycle = {"sportTypeId": 2, "sportTypeKey": "cycling"}
-    sport_type_strength = {"sportTypeId": 5, "sportTypeKey": "strength_training"}
+    else:  # run
+        notes_upper = notes.upper()
+        is_interval = "VMA" in notes_upper or "INTERVAL" in notes_upper
+        is_long = duration_secs >= 45 * 60 or "LONG RUN" in notes_upper
+        pace = planned.goal_pace_per_km or ("5:30" if is_interval else "7:20")
+        warmup_secs = 10 * 60
 
-    segment_sport = {
-        "run": sport_type_run,
-        "cycle": sport_type_cycle,
-        "strength": sport_type_strength,
-    }[workout_type]
+        if is_interval:
+            # 10min warmup + 8×(1min @ VMA + 1min recovery) + 5min cooldown
+            interval_secs, recovery_secs, cooldown_secs, iterations = 60, 60, 5 * 60, 8
+            steps = [
+                _make_step(1, "warmup",   warmup_secs,    _speed_target("7:00"), order=1),
+                _repeat_group(iterations, [
+                    _make_step(3, "interval", interval_secs, _speed_target("5:30"), order=1),
+                    _make_step(4, "recovery", recovery_secs, _speed_target("7:20"), order=2),
+                ], order=2),
+                _make_step(2, "cooldown", cooldown_secs,  _speed_target("7:00"), order=3),
+            ]
+            estimated_secs = warmup_secs + iterations * (interval_secs + recovery_secs) + cooldown_secs
+        else:
+            main_secs = max(duration_secs - warmup_secs, 60)
+            warmup_pace = "7:00" if is_long else "7:30"
+            steps = [
+                _make_step(1, "warmup",   warmup_secs, _speed_target(warmup_pace), order=1),
+                _make_step(3, "interval", main_secs,   _speed_target(pace),        order=2),
+            ]
+            estimated_secs = duration_secs
 
-    workout_classes = {
-        "run": RunningWorkout,
-        "cycle": CyclingWorkout,
-        "strength": FitnessEquipmentWorkout,
-    }
-    cls = workout_classes[workout_type]
-
-    workout_name = planned.notes.splitlines()[0][:80] if planned.notes else ""
-    if not workout_name:
-        type_labels = {"run": "Run", "cycle": "Cycle", "strength": "Strength"}
-        duration_label = f"{planned.goal_duration_min}min" if planned.goal_duration_min else ""
-        workout_name = f"{type_labels[workout_type]} {duration_label}".strip()
-
-    return cls(
-        workoutName=workout_name,
-        estimatedDurationInSecs=duration_secs,
-        workoutSegments=[
-            WorkoutSegment(
-                segmentOrder=1,
-                sportType=segment_sport,
-                workoutSteps=[step],
-            )
+    return {
+        "workoutName": name,
+        "sportType": sport,
+        "estimatedDurationInSecs": estimated_secs,
+        "workoutSegments": [
+            {"segmentOrder": 1, "sportType": sport, "workoutSteps": steps}
         ],
-    )
+    }
 
 
 def push_planned_workout(planned_id: int, db: Session) -> dict:
@@ -896,7 +964,7 @@ def push_planned_workout(planned_id: int, db: Session) -> dict:
     if planned.garmin_workout_id:
         return {"garmin_workout_id": planned.garmin_workout_id, "status": "already_pushed"}
 
-    workout_type = planned.type.value if hasattr(planned.type, "value") else planned.type
+    workout_type = planned.type.value if hasattr(planned.type, "value") else str(planned.type)
     if workout_type not in _PUSHABLE_TYPES:
         return {"garmin_workout_id": None, "status": f"skipped:{workout_type}"}
 
@@ -908,8 +976,8 @@ def push_planned_workout(planned_id: int, db: Session) -> dict:
     except ImportError:
         return {"garmin_workout_id": None, "status": "error:garminconnect_not_installed"}
 
-    garmin_workout = _build_garmin_workout(planned)
-    if garmin_workout is None:
+    payload = _build_garmin_workout(planned)
+    if payload is None:
         return {"garmin_workout_id": None, "status": "error:could_not_build_workout"}
 
     try:
@@ -921,13 +989,7 @@ def push_planned_workout(planned_id: int, db: Session) -> dict:
         return {"garmin_workout_id": None, "status": f"error:login_failed:{exc}"}
 
     try:
-        upload_fn_map = {
-            "run": client.upload_running_workout,
-            "cycle": client.upload_cycling_workout,
-            "strength": client.upload_fitness_equipment_workout,
-        }
-        upload_fn = upload_fn_map[workout_type]
-        result = upload_fn(garmin_workout)
+        result = client.upload_workout(payload)
         garmin_id = str(
             result.get("workoutId") or result.get("workout", {}).get("workoutId", "")
         )
@@ -947,42 +1009,48 @@ def push_planned_workout(planned_id: int, db: Session) -> dict:
         return {"garmin_workout_id": None, "status": f"error:{exc}"}
 
 
-def push_week_to_garmin(
-    week_start: date, db: Session, *, flush_previous: bool = True
-) -> dict:
+def push_week_to_garmin(week_start: date, db: Session) -> dict:
     """Upload all planned workouts for a given week to Garmin Connect.
 
-    Optionally flushes (deletes from Garmin) any workouts from the previous
-    week that were previously pushed.
+    Always flushes the target week first for idempotency (push twice = no
+    duplicates). Optionally flushes the previous week based on the
+    ``flush_garmin_on_push`` user setting (default True).
 
     Args:
         week_start: Monday of the target week.
         db: Active database session.
-        flush_previous: If True, delete the previous week's pushed workouts
-            from Garmin Connect before uploading the new week.
 
     Returns:
         Dict with ``pushed``, ``skipped``, ``flushed``, and ``errors`` counts.
     """
-    from app.models.workout import PlannedWorkoutORM
+    from app.models.workout import PlannedWorkoutORM, UserSettingsORM
 
     flushed = 0
     flush_errors = 0
 
+    # Read flush_previous preference from persisted settings
+    settings = db.get(UserSettingsORM, 1)
+    flush_previous = settings.flush_garmin_on_push if settings is not None else True
+
     if flush_previous:
         prev_week_start = week_start - timedelta(days=7)
         prev_week_end = week_start - timedelta(days=1)
-        flush_result = flush_garmin_workouts_for_range(
-            prev_week_start, prev_week_end, db
-        )
-        flushed = flush_result["flushed"]
-        flush_errors = flush_result.get("errors", 0)
+        flush_result = flush_garmin_workouts_for_range(prev_week_start, prev_week_end, db)
+        flushed += flush_result["flushed"]
+        flush_errors += flush_result.get("errors", 0)
 
+    # Always flush the target week first (idempotency)
     week_end = week_start + timedelta(days=6)
+    cur_flush = flush_garmin_workouts_for_range(week_start, week_end, db)
+    flushed += cur_flush["flushed"]
+    flush_errors += cur_flush.get("errors", 0)
+
+    # Only push from today onwards — don't re-push past days
+    push_from = max(week_start, date.today())
     planned_rows = (
         db.query(PlannedWorkoutORM)
         .filter(
-            PlannedWorkoutORM.date >= week_start,
+            PlannedWorkoutORM.date >= push_from,
             PlannedWorkoutORM.date <= week_end,
         )
         .order_by(PlannedWorkoutORM.date)
@@ -1000,6 +1068,15 @@ def push_week_to_garmin(
             logger.warning("Push failed for planned_id=%d: %s", row.id, s)
         else:
             skipped += 1
+
+    # Record last_pushed_at on the singleton sync-state row
+    sync_state = db.get(GarminSyncStateORM, 1)
+    if sync_state is None:
+        sync_state = GarminSyncStateORM(id=1, last_pushed_at=datetime.utcnow())
+        db.add(sync_state)
+    else:
+        sync_state.last_pushed_at = datetime.utcnow()
+    db.commit()
 
     return {
         "pushed": pushed,

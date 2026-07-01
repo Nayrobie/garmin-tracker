@@ -18,7 +18,7 @@ import {
   closestCenter,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { format, addDays, addWeeks, subWeeks, startOfWeek, isToday, parseISO, nextMonday } from 'date-fns';
+import { format, addDays, addWeeks, subWeeks, startOfWeek, isToday, parseISO } from 'date-fns';
 import { ChevronLeft, ChevronRight, Plus, RefreshCw, Watch } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -198,8 +198,8 @@ export function WeekStrip({ onWeekChange, onSyncComplete }: WeekStripProps) {
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [pushingWeek, setPushingWeek] = useState(false);
-  const [flushPrevious, setFlushPrevious] = useState(true);
   const [pushMsg, setPushMsg] = useState<string | null>(null);
+  const [lastPushed, setLastPushed] = useState<string | null>(null);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -221,6 +221,7 @@ export function WeekStrip({ onWeekChange, onSyncComplete }: WeekStripProps) {
   useEffect(() => {
     load(weekStart);
     onWeekChange?.(weekStart);
+    scheduleApi.getSyncStatus().then((s) => setLastPushed(s.last_pushed)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -266,20 +267,20 @@ export function WeekStrip({ onWeekChange, onSyncComplete }: WeekStripProps) {
     }
   }
 
-  // Push next week's workouts to Garmin
+  // Push current week's workouts to Garmin
   async function handlePushWeek() {
     setPushingWeek(true);
     setPushMsg(null);
     try {
-      const nextWeek = nextMonday(new Date());
-      const weekStartStr = format(nextWeek, 'yyyy-MM-dd');
-      const result = await scheduleApi.pushWeekToGarmin(weekStartStr, flushPrevious);
-      const parts = [`⌚ ${result.pushed} pushed`];
+      const currentWeekStart = format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
+      const result = await scheduleApi.pushWeekToGarmin(currentWeekStart);
+      const parts = [`${result.pushed} pushed`];
       if (result.skipped > 0) parts.push(`${result.skipped} skipped`);
       if (result.flushed > 0) parts.push(`${result.flushed} old removed`);
       if (result.errors > 0) parts.push(`${result.errors} errors`);
       setPushMsg(parts.join(' · '));
-      // Refresh to show garmin badge on any current-view workouts that were pushed
+      const now = new Date().toISOString();
+      setLastPushed(now);
       load(weekStart);
     } catch (e) {
       setPushMsg(e instanceof Error ? e.message : 'Push failed');
@@ -436,46 +437,44 @@ export function WeekStrip({ onWeekChange, onSyncComplete }: WeekStripProps) {
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          {syncMsg && <p className="text-[11px] text-gray-500">{syncMsg}</p>}
-          {pushMsg && <p className="text-[11px] text-gray-500">{pushMsg}</p>}
-          {schedule?.last_sync && (
-            <p className="text-[11px] text-gray-400">
-              Last sync: {format(parseISO(schedule.last_sync), 'HH:mm')}
-            </p>
-          )}
-          {/* Push next week to Garmin */}
-          <div className="flex items-center gap-1">
+        <div className="flex items-center gap-3">
+          {/* Push to Garmin */}
+          <div className="flex items-center gap-1.5">
+            {pushMsg && <p className="text-[11px] text-gray-500">{pushMsg}</p>}
+            {!pushMsg && lastPushed && (
+              <p className="text-[11px] text-gray-400">
+                Last pushed: {format(parseISO(lastPushed), 'd MMM HH:mm')}
+              </p>
+            )}
             <button
               onClick={handlePushWeek}
               disabled={pushingWeek}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/60 border border-white/50 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/5 hover:border-[var(--color-accent)]/30 transition-colors disabled:opacity-50"
-              title={`Push next week's workouts to Garmin${flushPrevious ? ' (removes last week)' : ''}`}
+              title="Push this week's planned workouts to Garmin Connect. Replaces any already-pushed workouts for the week. Toggle 'Flush last week' in Settings to also remove the previous week's Garmin workouts."
             >
               <Watch size={12} className={pushingWeek ? 'animate-pulse' : ''} />
-              Push next week
+              Push to Garmin
             </button>
-            <label
-              className="flex items-center gap-1 text-[11px] text-gray-400 cursor-pointer select-none"
-              title="Remove last week's Garmin workouts when pushing"
-            >
-              <input
-                type="checkbox"
-                checked={flushPrevious}
-                onChange={(e) => setFlushPrevious(e.target.checked)}
-                className="w-3 h-3 rounded accent-[var(--color-accent)]"
-              />
-              flush old
-            </label>
           </div>
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/60 border border-white/50 text-gray-600 hover:bg-white/80 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
-            Sync Garmin
-          </button>
+
+          {/* Sync Garmin */}
+          <div className="flex items-center gap-1.5">
+            {syncMsg && <p className="text-[11px] text-gray-500">{syncMsg}</p>}
+            {!syncMsg && schedule?.last_sync && (
+              <p className="text-[11px] text-gray-400">
+                Last sync: {format(parseISO(schedule.last_sync), 'HH:mm')}
+              </p>
+            )}
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/60 border border-white/50 text-gray-600 hover:bg-white/80 transition-colors disabled:opacity-50"
+              title="Pull completed activities from Garmin Connect into the calendar."
+            >
+              <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
+              Sync Garmin
+            </button>
+          </div>
         </div>
       </div>
 
