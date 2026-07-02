@@ -452,8 +452,11 @@ def sync_garmin_sleep(
         }
 
         if existing:
+            # Only overwrite a field when the new value is not None —
+            # prevents a bad/empty Garmin response from erasing good data.
             for k, v in fields.items():
-                setattr(existing, k, v)
+                if v is not None or k == "synced_at":
+                    setattr(existing, k, v)
         else:
             row = SleepRecordORM(date=sleep_date, **fields)
             db.add(row)
@@ -545,8 +548,11 @@ def sync_menstrual_cycles(
         }
 
         if existing:
+            # Only overwrite a field when the new value is not None —
+            # prevents a partial/bad Garmin response from erasing good data.
             for k, v in fields.items():
-                setattr(existing, k, v)
+                if v is not None or k == "synced_at":
+                    setattr(existing, k, v)
         else:
             row = MenstrualCycleORM(start_date=cycle_start, **fields)
             db.add(row)

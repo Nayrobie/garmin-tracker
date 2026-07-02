@@ -796,27 +796,36 @@ def get_sleep_records(
 
 @router.post("/sleep/sync")
 def sync_sleep(
+    days_back: Optional[int] = None,
     db: Session = Depends(get_db),
 ) -> dict:
-    """Trigger a Garmin sleep data sync (incremental from last synced record).
+    """Trigger a Garmin sleep data sync.
 
     Args:
+        days_back: Number of days to sync back. If omitted, uses incremental
+            logic (from the oldest missing day). Pass a large value (e.g. 1825)
+            to do a full historical sync.
         db: Database session.
 
     Returns:
         Dict with synced count and optional error.
     """
-    # Incremental: pull from the day after the last sleep record, or 1 year back for first sync
-    today = date.today()
-    latest = (
-        db.query(SleepRecordORM)
-        .order_by(SleepRecordORM.date.desc())
-        .first()
-    )
-    if latest:
-        days_back = (today - latest.date).days + 1
+    if days_back is not None:
+        # Explicit override — caller knows exactly how far back they want
+        pass
     else:
-        days_back = 365  # first sync: full year
+        # Incremental: pull from the day after the latest record to today.
+        # For the very first sync (no records), go back 2 years to capture full history.
+        today = date.today()
+        latest = (
+            db.query(SleepRecordORM)
+            .order_by(SleepRecordORM.date.desc())
+            .first()
+        )
+        if latest:
+            days_back = (today - latest.date).days + 1
+        else:
+            days_back = 730  # first sync: 2 years
     result = sync_garmin_sleep(db, days_back=days_back)
     # Also enrich with HRV + cycle data after syncing sleep
     enrich_result = sync_hrv_and_cycle_day(db, days_back=days_back)
@@ -869,28 +878,36 @@ def get_cycles(db: Session = Depends(get_db)) -> list[MenstrualCycleORM]:
 
 @router.post("/cycles/sync")
 def sync_cycles(
+    days_back: Optional[int] = None,
     db: Session = Depends(get_db),
 ) -> dict:
-    """Trigger a Garmin menstrual cycle sync (incremental from last synced record).
+    """Trigger a Garmin menstrual cycle sync.
 
     Args:
+        days_back: Number of days to sync back. If omitted, syncs from the
+            oldest existing cycle to today so no gaps are created.
+            Pass a large value (e.g. 1825) for a full historical backfill.
         db: Database session.
 
     Returns:
         Dict with synced count and optional error.
     """
-    # Incremental: pull from the day after the last cycle, or 1 year back for first sync
-    today = date.today()
-    latest_cycle = (
-        db.query(MenstrualCycleORM)
-        .order_by(MenstrualCycleORM.start_date.desc())
-        .first()
-    )
-    if latest_cycle:
-        last_date = date.fromisoformat(str(latest_cycle.start_date))
-        days_back = (today - last_date).days + 1
+    if days_back is not None:
+        pass
     else:
-        days_back = 365  # first sync: full year
+        # Cover the full span from the oldest known cycle to today so that
+        # any gaps inside the known range are filled on every sync.
+        today = date.today()
+        oldest_cycle = (
+            db.query(MenstrualCycleORM)
+            .order_by(MenstrualCycleORM.start_date.asc())
+            .first()
+        )
+        if oldest_cycle:
+            oldest_date = date.fromisoformat(str(oldest_cycle.start_date))
+            days_back = (today - oldest_date).days + 1
+        else:
+            days_back = 730  # first sync: 2 years
     return sync_menstrual_cycles(db, days_back=days_back)
 
 
