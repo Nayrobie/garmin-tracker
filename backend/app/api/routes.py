@@ -528,10 +528,16 @@ def get_weekly_stats(
     )
 
     # Compute current week aggregates
+    saturday = week_start + timedelta(days=5)
     distances = [a.distance_km for a in actual_rows if a.distance_km]
     total_volume_km = round(sum(distances), 2)
-    long_run_km = round(max(distances), 2) if distances else 0.0
-    run_count = sum(1 for a in actual_rows if a.type.value == "run")
+    run_distances = [a.distance_km for a in actual_rows if a.distance_km and a.type.value == "run"]
+    # Long run = Saturday run specifically (not the week's max run)
+    saturday_run = next(
+        (a for a in actual_rows if a.date == saturday and a.type.value == "run"), None
+    )
+    long_run_km = round(saturday_run.distance_km, 2) if saturday_run and saturday_run.distance_km else 0.0
+    run_count = len(run_distances)
     total_duration_min = round(
         sum(a.duration_min for a in actual_rows if a.duration_min), 1
     )
@@ -542,6 +548,29 @@ def get_weekly_stats(
     workouts_by_type: dict[str, int] = {}
     for a in actual_rows:
         workouts_by_type[a.type.value] = workouts_by_type.get(a.type.value, 0) + 1
+
+    # Planned run metrics
+    planned_runs = [p for p in planned_rows if p.type.value == "run"]
+    planned_run_count = len(planned_runs)
+
+    def _planned_km(p: PlannedWorkoutORM) -> float:
+        if p.goal_duration_min and p.goal_pace_per_km:
+            try:
+                parts = p.goal_pace_per_km.split(":")
+                pace_secs = int(parts[0]) * 60 + int(parts[1])
+                if pace_secs > 0:
+                    return round((p.goal_duration_min * 60) / pace_secs, 2)
+            except (ValueError, IndexError):
+                pass
+        return 0.0
+
+    planned_run_kms = [_planned_km(p) for p in planned_runs]
+    planned_volume_km = round(sum(planned_run_kms), 2)
+    # Planned long run = Saturday planned run specifically
+    saturday_planned_run = next(
+        (p for p in planned_rows if p.date == saturday and p.type.value == "run"), None
+    )
+    planned_long_run_km = _planned_km(saturday_planned_run) if saturday_planned_run else 0.0
 
     # Previous week volume
     prev_distances = [a.distance_km for a in prev_actual_rows if a.distance_km]
@@ -568,6 +597,9 @@ def get_weekly_stats(
         workouts_by_type=workouts_by_type,
         planned_count=len(planned_rows),
         actual_count=len(actual_rows),
+        planned_run_count=planned_run_count,
+        planned_volume_km=planned_volume_km,
+        planned_long_run_km=planned_long_run_km,
         prev_week_volume_km=prev_week_volume_km,
         volume_change_pct=volume_change_pct,
         volume_alert=volume_alert,

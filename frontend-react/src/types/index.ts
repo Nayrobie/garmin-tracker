@@ -108,6 +108,9 @@ export interface WeeklyStats {
   workouts_by_type: Record<string, number>;
   planned_count: number;
   actual_count: number;
+  planned_run_count: number;
+  planned_volume_km: number;
+  planned_long_run_km: number;
   prev_week_volume_km: number | null;
   volume_change_pct: number | null;
   volume_alert: boolean;

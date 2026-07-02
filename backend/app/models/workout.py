@@ -531,6 +531,9 @@ class WeeklyStats(BaseModel):
     workouts_by_type: dict[str, int]
     planned_count: int
     actual_count: int
+    planned_run_count: int
+    planned_volume_km: float
+    planned_long_run_km: float
     prev_week_volume_km: Optional[float]
     volume_change_pct: Optional[float]
     volume_alert: bool
